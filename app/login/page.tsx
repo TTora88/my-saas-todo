@@ -27,14 +27,15 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-50/90 p-4">
-      <div className="w-full max-w-sm rounded-2xl border border-slate-200/80 bg-white p-8 shadow-lg shadow-slate-200/50">
-        <h1 className="text-xl font-semibold text-slate-800 text-center mb-6">
-          로그인
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 via-slate-50 to-slate-100 p-4">
+      <div className="w-full max-w-md rounded-2xl border border-slate-200/60 bg-white p-10 shadow-lg shadow-slate-300/40">
+        <h1 className="text-2xl font-bold text-slate-800 text-center mb-8 tracking-tight">
+          My Todo List
         </h1>
-        <form onSubmit={handleLogin} className="space-y-4">
+        <p className="text-slate-500 text-center text-sm mb-8">로그인</p>
+        <form onSubmit={handleLogin} className="space-y-5">
           <div>
-            <label htmlFor="email" className="block text-sm font-medium text-slate-700 mb-1">
+            <label htmlFor="email" className="block text-sm font-medium text-slate-700 mb-2">
               이메일
             </label>
             <input
@@ -44,12 +45,12 @@ export default function LoginPage() {
               onChange={(e) => setEmail(e.target.value)}
               required
               autoComplete="email"
-              className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50/50 text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-300 focus:border-transparent"
+              className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50/50 text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-400 transition-shadow"
               placeholder="you@example.com"
             />
           </div>
           <div>
-            <label htmlFor="password" className="block text-sm font-medium text-slate-700 mb-1">
+            <label htmlFor="password" className="block text-sm font-medium text-slate-700 mb-2">
               비밀번호
             </label>
             <input
@@ -59,27 +60,27 @@ export default function LoginPage() {
               onChange={(e) => setPassword(e.target.value)}
               required
               autoComplete="current-password"
-              className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50/50 text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-300 focus:border-transparent"
+              className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50/50 text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-400 transition-shadow"
               placeholder="••••••••"
             />
           </div>
           {error && (
-            <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">
+            <p className="text-sm text-red-600 bg-red-50 rounded-xl px-4 py-2.5">
               {error}
             </p>
           )}
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-2.5 rounded-xl font-medium text-white bg-slate-800 hover:bg-slate-700 disabled:opacity-50 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-2"
+            className="w-full py-3 rounded-xl font-semibold text-white bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
           >
             {loading ? "로그인 중..." : "로그인"}
           </button>
         </form>
-        <div className="mt-6 text-center">
+        <div className="mt-8 text-center">
           <Link
             href="/signup"
-            className="text-sm font-medium text-slate-600 hover:text-slate-800 underline underline-offset-2"
+            className="inline-flex items-center justify-center w-full py-3 rounded-xl font-medium text-slate-700 border-2 border-slate-200 hover:bg-slate-50 hover:border-slate-300 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-300 focus:ring-offset-2"
           >
             회원가입
           </Link>

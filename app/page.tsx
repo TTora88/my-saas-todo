@@ -79,11 +79,10 @@ function TodoInput({
     }
   };
 
-  const isWork = category === "work";
   return (
     <form
       onSubmit={handleSubmit}
-      className="flex gap-2 p-2 rounded-xl bg-white border border-slate-200/80 shadow-sm focus-within:ring-2 focus-within:ring-slate-300/50 focus-within:border-slate-300 transition-all"
+      className="flex gap-3 p-2 rounded-2xl bg-white border border-slate-200/80 shadow-lg shadow-slate-200/50 focus-within:ring-2 focus-within:ring-indigo-500/30 focus-within:border-indigo-300 transition-all"
     >
       <input
         type="text"
@@ -91,18 +90,14 @@ function TodoInput({
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={handleKeyDown}
         placeholder={placeholder}
-        className="flex-1 min-w-0 px-4 py-2.5 rounded-lg bg-slate-50/50 text-slate-800 placeholder:text-slate-400 focus:outline-none border-0"
+        className="flex-1 min-w-0 px-5 py-3.5 rounded-xl bg-slate-50/80 text-slate-800 placeholder:text-slate-400 focus:outline-none border-0 text-base"
       />
       <button
         type="submit"
-        className={`shrink-0 flex items-center gap-1.5 px-4 py-2.5 rounded-lg font-medium text-white shadow-sm transition-all focus:outline-none focus:ring-2 focus:ring-offset-1 ${
-          isWork
-            ? "bg-blue-500 hover:bg-blue-600 focus:ring-blue-400"
-            : "bg-emerald-500 hover:bg-emerald-600 focus:ring-emerald-400"
-        }`}
+        className="shrink-0 flex items-center gap-2 px-5 py-3.5 rounded-xl font-semibold text-white bg-indigo-600 hover:bg-indigo-500 shadow-md transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
       >
-        <Plus className="w-4 h-4" />
-        <span className="hidden sm:inline">추가</span>
+        <Plus className="w-5 h-5" />
+        <span>추가</span>
       </button>
     </form>
   );
@@ -120,31 +115,31 @@ function TodoRow({
 }) {
   const isWork = todo.category === "work";
   return (
-    <li className="group flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-slate-50/80 transition-colors">
+    <li className="group flex items-center gap-4 p-4 rounded-2xl bg-white border border-slate-200/80 shadow-sm hover:shadow-md transition-all duration-200 ease-out">
       <button
         type="button"
         onClick={() => onToggle(todo.id)}
-        className={`shrink-0 w-5 h-5 rounded-md border-2 flex items-center justify-center transition-colors focus:outline-none focus:ring-2 focus:ring-offset-1 ${
+        className={`shrink-0 w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-300 ${
           todo.is_done
             ? isWork
-              ? "bg-blue-500 border-blue-500 text-white"
+              ? "bg-indigo-500 border-indigo-500 text-white"
               : "bg-emerald-500 border-emerald-500 text-white"
-            : "border-slate-300 hover:border-slate-400 focus:ring-slate-300"
+            : "border-slate-300 hover:border-slate-400"
         }`}
       >
-        {todo.is_done && <Check className="w-3 h-3 stroke-[3]" />}
+        {todo.is_done && <Check className="w-3.5 h-3.5 stroke-[3]" />}
       </button>
       <span
-        className={`flex-1 min-w-0 text-slate-700 break-words ${
-          todo.is_done ? "line-through text-slate-400" : ""
+        className={`flex-1 min-w-0 break-words transition-colors duration-200 ${
+          todo.is_done ? "line-through text-slate-400" : "text-slate-700"
         }`}
       >
         {todo.title}
       </span>
       <span
-        className={`shrink-0 text-xs font-medium px-2 py-0.5 rounded ${
+        className={`shrink-0 text-xs font-medium px-2.5 py-1 rounded-lg ${
           isWork
-            ? "bg-blue-100 text-blue-700"
+            ? "bg-indigo-100 text-indigo-700"
             : "bg-emerald-100 text-emerald-700"
         }`}
       >
@@ -153,10 +148,10 @@ function TodoRow({
       <button
         type="button"
         onClick={() => onRemove(todo.id)}
-        className="shrink-0 p-1.5 rounded-md text-slate-400 hover:text-red-600 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-all focus:outline-none focus:ring-2 focus:ring-red-200"
+        className="shrink-0 p-2 rounded-xl text-slate-300 hover:text-red-600 hover:bg-red-50 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-red-200"
         aria-label="삭제"
       >
-        <Trash2 className="w-4 h-4" />
+        <Trash2 className="w-5 h-5" />
       </button>
     </li>
   );
@@ -325,38 +320,43 @@ export default function TodoApp() {
             </button>
           ))}
         </nav>
-        <div className="p-2 border-t border-slate-100">
-          <button
-            type="button"
-            onClick={handleLogout}
-            className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-50 hover:text-slate-800 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-200"
-          >
-            <LogOut className="w-4 h-4" />
-            로그아웃
-          </button>
-        </div>
       </aside>
 
-      {/* Main 80% */}
-      <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
+      {/* Main: 중앙 컨테이너 + 헤더 */}
+      <main className="flex-1 flex flex-col min-w-0 overflow-hidden bg-gradient-to-b from-slate-50 to-slate-100/80">
         {loading && (
           <div className="flex-1 flex items-center justify-center text-slate-500 text-sm">
             로딩 중...
           </div>
         )}
-        {!loading && fetchError && (
-          <div className="mx-6 mt-6 p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-sm">
-            <p className="font-medium">할 일 목록을 불러올 수 없습니다</p>
-            <p className="mt-1 text-amber-700">{fetchError}</p>
-            <p className="mt-2 text-amber-600 text-xs">
-              Supabase에 <code className="bg-amber-100 px-1 rounded">todos</code> 테이블이 있는지, RLS 정책에서 anon 사용자의 SELECT가 허용되는지 확인해 주세요.
-            </p>
-          </div>
-        )}
-        {!loading && menu === "inbox" && (
-          <>
-            <div className="p-6 pb-4 border-b border-slate-200/80 bg-white/50">
-              <Tabs
+        {!loading && (
+          <div className="flex-1 flex flex-col min-w-0 w-full max-w-2xl mx-auto px-6 py-8">
+            <header className="flex items-center justify-between mb-8">
+              <h1 className="text-2xl font-bold text-slate-800 tracking-tight">
+                나의 목표
+              </h1>
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium text-slate-600 border border-slate-200 bg-white hover:bg-slate-50 hover:border-slate-300 shadow-sm transition-colors focus:outline-none focus:ring-2 focus:ring-slate-300"
+              >
+                <LogOut className="w-4 h-4" />
+                로그아웃
+              </button>
+            </header>
+            {fetchError && (
+              <div className="mb-6 p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-800 text-sm">
+                <p className="font-medium">할 일 목록을 불러올 수 없습니다</p>
+                <p className="mt-1 text-amber-700">{fetchError}</p>
+                <p className="mt-2 text-amber-600 text-xs">
+                  Supabase에 <code className="bg-amber-100 px-1 rounded">todos</code> 테이블이 있는지, RLS 정책을 확인해 주세요.
+                </p>
+              </div>
+            )}
+            {menu === "inbox" && (
+              <>
+                <div className="mb-6">
+                  <Tabs
                 tabs={[
                   {
                     id: "work",
@@ -372,107 +372,105 @@ export default function TodoApp() {
                 active={inboxTab}
                 onSelect={(id) => setInboxTab(id as "work" | "life")}
               />
-            </div>
-            <div className="p-6 flex flex-col flex-1 min-h-0">
-              <div className="mb-4">
-                <TodoInput
-                  value={inboxInput}
-                  onChange={setInboxInput}
-                  onSubmit={() => {
-                    addTodo(inboxInput.trim(), inboxTab);
-                    setInboxInput("");
-                  }}
-                  placeholder={`${inboxTab === "work" ? "Work" : "Life"} 할 일 추가...`}
-                  category={inboxTab}
-                />
-              </div>
-              <ul className="flex-1 overflow-y-auto space-y-0.5 rounded-xl border border-slate-200/80 bg-white/80 p-2 min-h-[200px]">
-                {filterByCategory(todos, inboxTab).length === 0 ? (
-                  <li className="py-12 text-center text-slate-400 text-sm">
-                    할 일을 입력하고 추가해 보세요
-                  </li>
-                ) : (
-                  filterByCategory(todos, inboxTab).map((todo) => (
-                    <TodoRow
-                      key={todo.id}
-                      todo={todo}
-                      onToggle={toggleTodo}
-                      onRemove={removeTodo}
-                    />
-                  ))
-                )}
-              </ul>
-            </div>
-          </>
-        )}
+                </div>
+                <div className="mb-6">
+                  <TodoInput
+                    value={inboxInput}
+                    onChange={setInboxInput}
+                    onSubmit={() => {
+                      addTodo(inboxInput.trim(), inboxTab);
+                      setInboxInput("");
+                    }}
+                    placeholder={`${inboxTab === "work" ? "Work" : "Life"} 할 일 추가...`}
+                    category={inboxTab}
+                  />
+                </div>
+                <ul className="flex-1 overflow-y-auto space-y-3 min-h-[200px]">
+                  {filterByCategory(todos, inboxTab).length === 0 ? (
+                    <li className="py-16 text-center text-slate-400 text-sm rounded-2xl bg-white/60 border border-dashed border-slate-200">
+                      할 일을 입력하고 추가해 보세요
+                    </li>
+                  ) : (
+                    filterByCategory(todos, inboxTab).map((todo) => (
+                      <TodoRow
+                        key={todo.id}
+                        todo={todo}
+                        onToggle={toggleTodo}
+                        onRemove={removeTodo}
+                      />
+                    ))
+                  )}
+                </ul>
+              </>
+            )}
 
-        {!loading && menu === "today" && (
-          <>
-            <div className="p-6 pb-4 border-b border-slate-200/80 bg-white/50">
-              <Tabs
-                tabs={[
-                  {
-                    id: "all",
-                    label: "All",
-                    icon: <ListTodo className="w-4 h-4 text-slate-600" />,
-                  },
-                  {
-                    id: "work",
-                    label: "Work",
-                    icon: <Briefcase className="w-4 h-4 text-blue-600" />,
-                  },
-                  {
-                    id: "life",
-                    label: "Life",
-                    icon: <Heart className="w-4 h-4 text-emerald-600" />,
-                  },
-                ]}
-                active={todayTab}
-                onSelect={setTodayTab}
-              />
-            </div>
-            <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-              <ul className="flex-1 overflow-y-auto p-6 space-y-0.5 min-h-0">
-                {filterByCategory(todos, todayTab).length === 0 ? (
-                  <li className="py-12 text-center text-slate-400 text-sm rounded-xl border border-dashed border-slate-200 bg-white/50">
-                    할 일이 없습니다
-                  </li>
-                ) : (
-                  filterByCategory(todos, todayTab).map((todo) => (
-                    <TodoRow
-                      key={todo.id}
-                      todo={todo}
-                      onToggle={toggleTodo}
-                      onRemove={removeTodo}
-                    />
-                  ))
-                )}
-              </ul>
-              <div className="shrink-0 p-4 pt-2 pb-6 border-t border-slate-200/80 bg-white/80">
-                <TodoInput
-                  value={todayInput}
-                  onChange={setTodayInput}
-                  onSubmit={() => {
-                    const category: Category =
-                      todayTab === "life" ? "life" : "work";
-                    addTodo(todayInput.trim(), category);
-                    setTodayInput("");
-                  }}
-                  placeholder={
-                    todayTab === "all"
-                      ? "할 일 추가 (기본: Work)"
-                      : `${todayTab === "work" ? "Work" : "Life"} 할 일 추가...`
-                  }
-                  category={todayTab === "life" ? "life" : "work"}
-                />
-              </div>
-            </div>
-          </>
-        )}
+            {menu === "today" && (
+              <>
+                <div className="mb-6">
+                  <Tabs
+                    tabs={[
+                      {
+                        id: "all",
+                        label: "All",
+                        icon: <ListTodo className="w-4 h-4 text-slate-600" />,
+                      },
+                      {
+                        id: "work",
+                        label: "Work",
+                        icon: <Briefcase className="w-4 h-4 text-blue-600" />,
+                      },
+                      {
+                        id: "life",
+                        label: "Life",
+                        icon: <Heart className="w-4 h-4 text-emerald-600" />,
+                      },
+                    ]}
+                    active={todayTab}
+                    onSelect={setTodayTab}
+                  />
+                </div>
+                <ul className="flex-1 overflow-y-auto space-y-3 min-h-0 mb-6">
+                  {filterByCategory(todos, todayTab).length === 0 ? (
+                    <li className="py-16 text-center text-slate-400 text-sm rounded-2xl bg-white/60 border border-dashed border-slate-200">
+                      할 일이 없습니다
+                    </li>
+                  ) : (
+                    filterByCategory(todos, todayTab).map((todo) => (
+                      <TodoRow
+                        key={todo.id}
+                        todo={todo}
+                        onToggle={toggleTodo}
+                        onRemove={removeTodo}
+                      />
+                    ))
+                  )}
+                </ul>
+                <div className="rounded-2xl bg-white border border-slate-200/80 shadow-lg shadow-slate-200/50 p-2">
+                  <TodoInput
+                    value={todayInput}
+                    onChange={setTodayInput}
+                    onSubmit={() => {
+                      const category: Category =
+                        todayTab === "life" ? "life" : "work";
+                      addTodo(todayInput.trim(), category);
+                      setTodayInput("");
+                    }}
+                    placeholder={
+                      todayTab === "all"
+                        ? "할 일 추가 (기본: Work)"
+                        : `${todayTab === "work" ? "Work" : "Life"} 할 일 추가...`
+                    }
+                    category={todayTab === "life" ? "life" : "work"}
+                  />
+                </div>
+              </>
+            )}
 
-        {!loading && (menu === "next" || menu === "calendar") && (
-          <div className="flex-1 flex items-center justify-center p-6 text-slate-400 text-sm">
-            {menu === "next" ? "Next" : "Calendar"} 화면은 준비 중입니다.
+            {(menu === "next" || menu === "calendar") && (
+              <div className="flex-1 flex items-center justify-center py-16 text-slate-400 text-sm rounded-2xl bg-white/60 border border-dashed border-slate-200">
+                {menu === "next" ? "Next" : "Calendar"} 화면은 준비 중입니다.
+              </div>
+            )}
           </div>
         )}
       </main>
