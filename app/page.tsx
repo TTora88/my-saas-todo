@@ -1,7 +1,22 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
+import {
+  DndContext,
+  PointerSensor,
+  TouchSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  arrayMove,
+  verticalListSortingStrategy,
+  useSortable,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import {
   Inbox,
   Calendar,
@@ -13,6 +28,7 @@ import {
   Check,
   Plus,
   LogOut,
+  GripVertical,
 } from "lucide-react";
 import { supabase } from "@/src/lib/supabase";
 
@@ -25,23 +41,29 @@ type Todo = {
   is_done: boolean;
   category: Category;
   created_at?: string;
+  order_index: number;
 };
 
 type SidebarMenu = "inbox" | "today" | "next" | "calendar";
 
-function mapRowToTodo(row: {
-  id: string;
-  title: string;
-  is_done: boolean;
-  category: string;
-  created_at?: string;
-}): Todo {
+function mapRowToTodo(
+  row: {
+    id: string;
+    title: string;
+    is_done: boolean;
+    category: string;
+    created_at?: string;
+    order_index?: number | null;
+  },
+  index: number
+): Todo {
   return {
     id: row.id,
     title: row.title,
     is_done: row.is_done ?? false,
     category: row.category === "life" ? "life" : "work",
     created_at: row.created_at,
+    order_index: row.order_index ?? index,
   };
 }
 
@@ -103,8 +125,8 @@ function TodoInput({
   );
 }
 
-// ——— 할 일 한 줄 (체크, 텍스트, 삭제) ———
-function TodoRow({
+// ——— 정렬 가능한 할 일 카드 (드래그 핸들 + 드래그 중 스타일) ———
+function SortableTodoRow({
   todo,
   onToggle,
   onRemove,
@@ -113,9 +135,38 @@ function TodoRow({
   onToggle: (id: string) => void;
   onRemove: (id: string) => void;
 }) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: todo.id });
+
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
+
   const isWork = todo.category === "work";
   return (
-    <li className="group flex items-center gap-4 p-4 rounded-2xl bg-white border border-slate-200/80 shadow-sm hover:shadow-md transition-all duration-200 ease-out">
+    <li
+      ref={setNodeRef}
+      style={style}
+      className={`group flex items-center gap-3 p-4 rounded-2xl bg-white border border-slate-200/80 shadow-sm hover:shadow-md transition-all duration-200 ease-out ${
+        isDragging ? "opacity-80 shadow-xl ring-2 ring-indigo-500/30 z-10" : ""
+      }`}
+    >
+      <button
+        type="button"
+        className="shrink-0 p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 touch-none cursor-grab active:cursor-grabbing"
+        aria-label="드래그"
+        {...attributes}
+        {...listeners}
+      >
+        <GripVertical className="w-5 h-5" />
+      </button>
       <button
         type="button"
         onClick={() => onToggle(todo.id)}
@@ -224,7 +275,8 @@ export default function TodoApp() {
     setFetchError(null);
     const { data, error } = await supabase
       .from("todos")
-      .select("id, title, is_done, category, created_at");
+      .select("id, title, is_done, category, created_at, order_index")
+      .order("order_index", { ascending: true });
     if (error) {
       const msg = error.message ?? String(error);
       const code = error.code ?? "";
@@ -232,7 +284,7 @@ export default function TodoApp() {
       setFetchError(msg);
       return;
     }
-    setTodos((data ?? []).map(mapRowToTodo));
+    setTodos((data ?? []).map((row, i) => mapRowToTodo(row, i)));
   };
 
   useEffect(() => {
@@ -241,9 +293,11 @@ export default function TodoApp() {
   }, [authChecked]);
 
   const addTodo = async (text: string, category: Category) => {
+    const nextOrder =
+      todos.length === 0 ? 0 : Math.max(...todos.map((t) => t.order_index)) + 100;
     const { error } = await supabase
       .from("todos")
-      .insert({ title: text, is_done: false, category });
+      .insert({ title: text, is_done: false, category, order_index: nextOrder });
     if (error) {
       console.error("todos insert error:", { message: error.message, code: error.code });
       return;
@@ -274,9 +328,57 @@ export default function TodoApp() {
     await fetchTodos();
   };
 
+  const sortedTodos = useMemo(
+    () => [...todos].sort((a, b) => a.order_index - b.order_index),
+    [todos]
+  );
+
   const filterByCategory = (list: Todo[], tab: TabFilter) => {
     if (tab === "all") return list;
     return list.filter((t) => t.category === tab);
+  };
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 8 },
+    }),
+    useSensor(TouchSensor, {
+      activationConstraint: { delay: 200, tolerance: 6 },
+    })
+  );
+
+  const handleDragEnd = async (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const tab =
+      menu === "inbox" ? inboxTab : menu === "today" ? todayTab : "all";
+    const filtered = filterByCategory(sortedTodos, tab);
+    const oldIndex = filtered.findIndex((t) => t.id === active.id);
+    const newIndex = filtered.findIndex((t) => t.id === over.id);
+    if (oldIndex === -1 || newIndex === -1) return;
+
+    const reorderedFiltered = arrayMove(filtered, oldIndex, newIndex);
+    const filteredIds = new Set(reorderedFiltered.map((t) => t.id));
+    const newSorted = [...sortedTodos];
+    let reorderedIdx = 0;
+    for (let i = 0; i < newSorted.length; i++) {
+      if (filteredIds.has(newSorted[i].id)) {
+        newSorted[i] = reorderedFiltered[reorderedIdx++];
+      }
+    }
+    const withNewOrder: Todo[] = newSorted.map((t, i) => ({
+      ...t,
+      order_index: i,
+    }));
+
+    setTodos(withNewOrder);
+
+    await Promise.all(
+      withNewOrder.map((t) =>
+        supabase.from("todos").update({ order_index: t.order_index }).eq("id", t.id)
+      )
+    );
   };
 
   const sidebarItems: { id: SidebarMenu; label: string; icon: React.ReactNode }[] = [
@@ -385,22 +487,29 @@ export default function TodoApp() {
                     category={inboxTab}
                   />
                 </div>
-                <ul className="flex-1 overflow-y-auto space-y-3 min-h-[200px]">
-                  {filterByCategory(todos, inboxTab).length === 0 ? (
-                    <li className="py-16 text-center text-slate-400 text-sm rounded-2xl bg-white/60 border border-dashed border-slate-200">
-                      할 일을 입력하고 추가해 보세요
-                    </li>
-                  ) : (
-                    filterByCategory(todos, inboxTab).map((todo) => (
-                      <TodoRow
-                        key={todo.id}
-                        todo={todo}
-                        onToggle={toggleTodo}
-                        onRemove={removeTodo}
-                      />
-                    ))
-                  )}
-                </ul>
+                <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
+                  <SortableContext
+                    items={filterByCategory(sortedTodos, inboxTab).map((t) => t.id)}
+                    strategy={verticalListSortingStrategy}
+                  >
+                    <ul className="flex-1 overflow-y-auto space-y-3 min-h-[200px]">
+                      {filterByCategory(sortedTodos, inboxTab).length === 0 ? (
+                        <li className="py-16 text-center text-slate-400 text-sm rounded-2xl bg-white/60 border border-dashed border-slate-200">
+                          할 일을 입력하고 추가해 보세요
+                        </li>
+                      ) : (
+                        filterByCategory(sortedTodos, inboxTab).map((todo) => (
+                          <SortableTodoRow
+                            key={todo.id}
+                            todo={todo}
+                            onToggle={toggleTodo}
+                            onRemove={removeTodo}
+                          />
+                        ))
+                      )}
+                    </ul>
+                  </SortableContext>
+                </DndContext>
               </>
             )}
 
@@ -429,22 +538,29 @@ export default function TodoApp() {
                     onSelect={setTodayTab}
                   />
                 </div>
-                <ul className="flex-1 overflow-y-auto space-y-3 min-h-0 mb-6">
-                  {filterByCategory(todos, todayTab).length === 0 ? (
-                    <li className="py-16 text-center text-slate-400 text-sm rounded-2xl bg-white/60 border border-dashed border-slate-200">
-                      할 일이 없습니다
-                    </li>
-                  ) : (
-                    filterByCategory(todos, todayTab).map((todo) => (
-                      <TodoRow
-                        key={todo.id}
-                        todo={todo}
-                        onToggle={toggleTodo}
-                        onRemove={removeTodo}
-                      />
-                    ))
-                  )}
-                </ul>
+                <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
+                  <SortableContext
+                    items={filterByCategory(sortedTodos, todayTab).map((t) => t.id)}
+                    strategy={verticalListSortingStrategy}
+                  >
+                    <ul className="flex-1 overflow-y-auto space-y-3 min-h-0 mb-6">
+                      {filterByCategory(sortedTodos, todayTab).length === 0 ? (
+                        <li className="py-16 text-center text-slate-400 text-sm rounded-2xl bg-white/60 border border-dashed border-slate-200">
+                          할 일이 없습니다
+                        </li>
+                      ) : (
+                        filterByCategory(sortedTodos, todayTab).map((todo) => (
+                          <SortableTodoRow
+                            key={todo.id}
+                            todo={todo}
+                            onToggle={toggleTodo}
+                            onRemove={removeTodo}
+                          />
+                        ))
+                      )}
+                    </ul>
+                  </SortableContext>
+                </DndContext>
                 <div className="rounded-2xl bg-white border border-slate-200/80 shadow-lg shadow-slate-200/50 p-2">
                   <TodoInput
                     value={todayInput}
