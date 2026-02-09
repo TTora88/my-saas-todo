@@ -29,8 +29,9 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 via-slate-50 to-slate-100 p-4">
       <div className="w-full max-w-md rounded-2xl border border-slate-200/60 bg-white p-10 shadow-lg shadow-slate-300/40">
-        <h1 className="text-2xl font-bold text-slate-800 text-center mb-8 tracking-tight">
-          My Todo List
+        <h1 className="text-4xl font-extrabold tracking-tight text-slate-900 mb-6 text-center">
+          <span className="text-indigo-600">Do</span>Flow
+          <span className="text-indigo-400">.</span>
         </h1>
         <p className="text-slate-500 text-center text-sm mb-8">로그인</p>
         <form onSubmit={handleLogin} className="space-y-5">

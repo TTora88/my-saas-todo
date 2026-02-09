@@ -397,55 +397,51 @@ export default function TodoApp() {
   }
 
   return (
-    <div className="flex h-screen bg-slate-50/90 text-slate-800 font-sans antialiased">
-      {/* Sidebar 20% */}
-      <aside className="w-[20%] min-w-[180px] max-w-[240px] flex flex-col border-r border-slate-200/80 bg-white/80">
-        <div className="p-4 border-b border-slate-100">
-          <h1 className="text-lg font-semibold text-slate-800 tracking-tight">
-            Todo
+    <div className="flex h-screen flex-col md:flex-row text-slate-800 font-sans antialiased">
+      {/* 좌측 사이드바 */}
+      <aside className="w-full md:w-64 flex-shrink-0 flex flex-col justify-between p-6 bg-slate-50 border-r border-slate-200">
+        <div>
+          <h1 className="text-2xl font-extrabold tracking-tight text-slate-900 mb-8">
+            <span className="text-indigo-600">Do</span>Flow
+            <span className="text-indigo-400">.</span>
           </h1>
+          <nav className="flex flex-row md:flex-col gap-1 flex-wrap md:flex-nowrap">
+            {sidebarItems.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setMenu(item.id)}
+                className={`w-auto md:w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-slate-200 ${
+                  menu === item.id
+                    ? "bg-slate-200 text-slate-800"
+                    : "text-slate-600 hover:bg-slate-100 hover:text-slate-800"
+                }`}
+              >
+                {item.icon}
+                {item.label}
+              </button>
+            ))}
+          </nav>
         </div>
-        <nav className="flex-1 p-2">
-          {sidebarItems.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => setMenu(item.id)}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-slate-200 ${
-                menu === item.id
-                  ? "bg-slate-100 text-slate-800"
-                  : "text-slate-600 hover:bg-slate-50 hover:text-slate-800"
-              }`}
-            >
-              {item.icon}
-              {item.label}
-            </button>
-          ))}
-        </nav>
+        <button
+          type="button"
+          onClick={handleLogout}
+          className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-100 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-200 mt-6 md:mt-0"
+        >
+          <LogOut className="w-4 h-4" />
+          로그아웃
+        </button>
       </aside>
 
-      {/* Main: 중앙 컨테이너 + 헤더 */}
-      <main className="flex-1 flex flex-col min-w-0 overflow-hidden bg-gradient-to-b from-slate-50 to-slate-100/80">
+      {/* 우측 메인 콘텐츠 */}
+      <main className="flex-1 flex flex-col min-w-0 overflow-auto bg-white p-8 md:p-12">
         {loading && (
           <div className="flex-1 flex items-center justify-center text-slate-500 text-sm">
             로딩 중...
           </div>
         )}
         {!loading && (
-          <div className="flex-1 flex flex-col min-w-0 w-full max-w-2xl mx-auto px-6 py-8">
-            <header className="flex items-center justify-between mb-8">
-              <h1 className="text-2xl font-bold text-slate-800 tracking-tight">
-                나의 목표
-              </h1>
-              <button
-                type="button"
-                onClick={handleLogout}
-                className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium text-slate-600 border border-slate-200 bg-white hover:bg-slate-50 hover:border-slate-300 shadow-sm transition-colors focus:outline-none focus:ring-2 focus:ring-slate-300"
-              >
-                <LogOut className="w-4 h-4" />
-                로그아웃
-              </button>
-            </header>
+          <div className="flex-1 flex flex-col min-w-0">
             {fetchError && (
               <div className="mb-6 p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-800 text-sm">
                 <p className="font-medium">할 일 목록을 불러올 수 없습니다</p>
