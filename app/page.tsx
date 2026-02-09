@@ -27,7 +27,6 @@ import {
   Trash2,
   Check,
   Plus,
-  LogOut,
   GripVertical,
 } from "lucide-react";
 import { supabase } from "@/src/lib/supabase";
@@ -401,9 +400,23 @@ export default function TodoApp() {
       {/* 좌측 사이드바 */}
       <aside className="w-full md:w-64 flex-shrink-0 flex flex-col justify-between p-6 bg-slate-50 border-r border-slate-200">
         <div>
-          <h1 className="text-2xl font-extrabold tracking-tight text-slate-900 mb-8">
-            <span className="text-indigo-600">Do</span>Flow
-            <span className="text-indigo-400">.</span>
+          <h1 className="mb-8">
+            <div className="flex items-center gap-1.5 px-2">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-lg shadow-indigo-200">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 24 24"
+                  fill="currentColor"
+                  className="h-full w-full p-1 text-white"
+                  aria-hidden
+                >
+                  <path d="M2.5 12C2.5 7.5 6 4 10 4C13 4 15 6 17 9C18.5 11.5 20 12 21.5 12C22.3 12 23 11.3 23 10.5C23 12.5 21.5 16 18.5 16C15.5 16 13.5 14 11.5 11C10 8.5 8.5 8 7.5 8C6 8 5.5 10 5.5 12C5.5 15 8 17 10 17C10.5 17 11 17.5 11 18C11 18.5 10.5 19 10 19C7 19 2.5 16 2.5 12Z" />
+                </svg>
+              </div>
+              <span className="text-2xl font-extrabold tracking-tighter text-slate-900">
+                <span className="text-indigo-600">Do</span>Flow<span className="text-indigo-400">.</span>
+              </span>
+            </div>
           </h1>
           <nav className="flex flex-row md:flex-col gap-1 flex-wrap md:flex-nowrap">
             {sidebarItems.map((item) => (
@@ -426,9 +439,25 @@ export default function TodoApp() {
         <button
           type="button"
           onClick={handleLogout}
-          className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-100 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-200 mt-6 md:mt-0"
+          className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-slate-500 hover:text-red-600 hover:bg-red-50 transition-colors focus:outline-none focus:ring-2 focus:ring-red-200 mt-6 md:mt-0"
         >
-          <LogOut className="w-4 h-4" />
+          <svg
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+            className="shrink-0"
+            aria-hidden
+          >
+            <path
+              d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
           로그아웃
         </button>
       </aside>
