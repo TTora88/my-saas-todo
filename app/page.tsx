@@ -22,25 +22,50 @@ import {
   Calendar,
   Sun,
   ListTodo,
-  Briefcase,
-  Heart,
   Trash2,
   Check,
   Plus,
   GripVertical,
   Play,
   Flag,
+  Briefcase,
+  Heart,
+  Folder,
+  X,
 } from "lucide-react";
 import { supabase } from "@/src/lib/supabase";
 
-type Category = "work" | "life";
-type TabFilter = "work" | "life" | "all";
+const DEFAULT_CATEGORIES = ["Work", "Life"];
+const CATEGORIES_STORAGE_KEY = "todo-categories";
+
+function getCategoryIcon(name: string, className = "w-4 h-4"): React.ReactNode {
+  const n = (name || "").trim().toLowerCase();
+  if (n === "inbox") return <Inbox className={className} />;
+  if (n === "work") return <Briefcase className={className} />;
+  if (n === "life") return <Heart className={className} />;
+  return <Folder className={className} />;
+}
+
+function loadCategories(): string[] {
+  if (typeof window === "undefined") return [...DEFAULT_CATEGORIES];
+  try {
+    const s = localStorage.getItem(CATEGORIES_STORAGE_KEY);
+    if (s) {
+      const parsed = JSON.parse(s) as unknown;
+      if (Array.isArray(parsed) && parsed.every((x) => typeof x === "string")) {
+        const filtered = (parsed as string[]).filter((c) => c.trim().toLowerCase() !== "inbox");
+        return filtered.length > 0 ? filtered : [...DEFAULT_CATEGORIES];
+      }
+    }
+  } catch {}
+  return [...DEFAULT_CATEGORIES];
+}
 
 type Todo = {
   id: string;
   title: string;
   is_done: boolean;
-  category: Category;
+  category: string | null;
   created_at?: string;
   order_index: number;
   due_date?: string | null;
@@ -60,7 +85,7 @@ function mapRowToTodo(
     id: string;
     title: string;
     is_done: boolean;
-    category: string;
+    category?: string | null;
     created_at?: string;
     order_index?: number | null;
     due_date?: string | null;
@@ -68,11 +93,15 @@ function mapRowToTodo(
   },
   index: number
 ): Todo {
+  const category =
+    row.category != null && String(row.category).trim() !== ""
+      ? String(row.category).trim()
+      : null;
   return {
     id: row.id,
     title: row.title,
     is_done: row.is_done ?? false,
-    category: row.category === "life" ? "life" : "work",
+    category,
     created_at: row.created_at,
     order_index: row.order_index ?? index,
     due_date: row.due_date ?? null,
@@ -102,7 +131,6 @@ function TodoInput({
   onDueDateChange,
   onSubmit,
   placeholder = "할 일 추가...",
-  category,
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -112,7 +140,6 @@ function TodoInput({
   onDueDateChange: (v: string) => void;
   onSubmit: () => void;
   placeholder?: string;
-  category: Category;
 }) {
   const execInputRef = useRef<HTMLInputElement>(null);
   const dueInputRef = useRef<HTMLInputElement>(null);
@@ -220,7 +247,7 @@ function TodoInput({
   );
 }
 
-// ——— 할 일 카드 공통 내용 (뱃지 1클릭 → 네이티브 달력 즉시 오픈) ———
+// ——— 할 일 카드 공통 내용 (뱃지 1클릭 → 네이티브 달력 즉시 오픈 + 제목 인라인 편집) ———
 function TodoRowContent({
   todo,
   onToggle,
@@ -229,6 +256,12 @@ function TodoRowContent({
   onDueDateChange,
   showDragHandle,
   dragHandle,
+  isEditingTitle,
+  editTitle,
+  onEditTitleChange,
+  onStartEditTitle,
+  onSaveEditTitle,
+  onCancelEditTitle,
 }: {
   todo: Todo;
   onToggle: (id: string) => void;
@@ -237,8 +270,20 @@ function TodoRowContent({
   onDueDateChange: (id: string, v: string | null) => void;
   showDragHandle: boolean;
   dragHandle: React.ReactNode;
+  isEditingTitle: boolean;
+  editTitle: string;
+  onEditTitleChange: (v: string) => void;
+  onStartEditTitle: () => void;
+  onSaveEditTitle: () => void;
+  onCancelEditTitle: () => void;
 }) {
-  const isWork = todo.category === "work";
+  const displayCategory =
+    !todo.category ||
+    !todo.category.trim() ||
+    (todo.category || "").toLowerCase() === "general"
+      ? "Inbox"
+      : todo.category;
+  const isWork = displayCategory.toLowerCase() === "work";
   const today = getTodayISO();
   const isOverdue = todo.due_date && todo.due_date < today;
 
@@ -258,14 +303,45 @@ function TodoRowContent({
       >
         {todo.is_done && <Check className="w-3.5 h-3.5 stroke-[3]" />}
       </button>
-      <span className="flex-1 min-w-0 flex flex-col gap-1.5">
-        <span
-          className={`break-words transition-colors duration-200 ${
-            todo.is_done ? "line-through text-slate-400" : "text-slate-700"
-          }`}
-        >
-          {todo.title}
-        </span>
+      <span className="flex-1 min-w-0 flex flex-col gap-1">
+        {isEditingTitle ? (
+          <input
+            type="text"
+            value={editTitle}
+            onChange={(e) => onEditTitleChange(e.target.value)}
+            onBlur={onSaveEditTitle}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                onSaveEditTitle();
+              }
+              if (e.key === "Escape") {
+                e.preventDefault();
+                onCancelEditTitle();
+              }
+            }}
+            autoFocus
+            className="w-full min-w-0 bg-black/10 outline-none border-0 rounded-md break-words text-inherit px-1.5 py-0.5 text-slate-700 focus:ring-0 transition-colors duration-200"
+            aria-label="제목 수정"
+          />
+        ) : (
+          <span
+            role="button"
+            tabIndex={0}
+            onClick={onStartEditTitle}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                onStartEditTitle();
+              }
+            }}
+            className={`break-words transition-colors duration-200 cursor-text hover:bg-slate-50/80 rounded px-0.5 -mx-0.5 ${
+              todo.is_done ? "line-through text-slate-400" : "text-slate-700"
+            }`}
+          >
+            {todo.title}
+          </span>
+        )}
         <span className="flex items-center gap-2 flex-wrap">
           {/* 실행일 뱃지: 클릭 시 showPicker()로 달력 강제 오픈 */}
           <span
@@ -350,21 +426,24 @@ function TodoRowContent({
         </span>
       </span>
       <span
-        className={`shrink-0 text-xs font-medium px-2.5 py-1 rounded-lg ${
-          isWork
-            ? "bg-indigo-100 text-indigo-700"
-            : "bg-emerald-100 text-emerald-700"
+        className={`shrink-0 text-xs rounded-md px-2 py-0.5 font-medium capitalize ${
+          displayCategory.toLowerCase() === "work"
+            ? "bg-blue-100 text-blue-700"
+            : displayCategory.toLowerCase() === "life"
+              ? "bg-green-100 text-green-700"
+              : "bg-gray-100 text-gray-700"
         }`}
+        title={displayCategory}
       >
-        {isWork ? "Work" : "Life"}
+        {displayCategory}
       </span>
       <button
         type="button"
         onClick={() => onRemove(todo.id)}
-        className="shrink-0 p-2 rounded-xl text-slate-300 hover:text-red-600 hover:bg-red-50 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-red-200"
+        className="shrink-0 p-1.5 rounded-xl text-slate-300 hover:text-red-600 hover:bg-red-50 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-red-200"
         aria-label="삭제"
       >
-        <Trash2 className="w-5 h-5" />
+        <Trash2 className="w-4 h-4" />
       </button>
     </>
   );
@@ -377,12 +456,24 @@ function SortableTodoRow({
   onRemove,
   onExecutionDateChange,
   onDueDateChange,
+  editingTodoId,
+  editTitle,
+  onEditTitleChange,
+  onStartEditTitle,
+  onSaveEditTitle,
+  onCancelEditTitle,
 }: {
   todo: Todo;
   onToggle: (id: string) => void;
   onRemove: (id: string) => void;
   onExecutionDateChange: (id: string, v: string | null) => void;
   onDueDateChange: (id: string, dueDate: string | null) => void;
+  editingTodoId: string | null;
+  editTitle: string;
+  onEditTitleChange: (v: string) => void;
+  onStartEditTitle: (id: string) => void;
+  onSaveEditTitle: () => void;
+  onCancelEditTitle: () => void;
 }) {
   const {
     attributes,
@@ -402,7 +493,7 @@ function SortableTodoRow({
     <li
       ref={setNodeRef}
       style={style}
-      className={`group flex items-center gap-3 p-4 rounded-2xl bg-white border border-slate-200/80 shadow-sm hover:shadow-md transition-all duration-200 ease-out ${
+      className={`group flex items-center gap-2.5 px-4 py-2.5 rounded-2xl bg-white border border-slate-200/80 shadow-sm hover:shadow-md transition-all duration-200 ease-out ${
         isDragging ? "opacity-80 shadow-xl ring-2 ring-indigo-500/30 z-10" : ""
       }`}
     >
@@ -416,7 +507,7 @@ function SortableTodoRow({
         dragHandle={
           <button
             type="button"
-            className="shrink-0 p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 touch-none cursor-grab active:cursor-grabbing"
+            className="shrink-0 p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 touch-none cursor-grab active:cursor-grabbing"
             aria-label="드래그"
             {...attributes}
             {...listeners}
@@ -424,6 +515,12 @@ function SortableTodoRow({
             <GripVertical className="w-5 h-5" />
           </button>
         }
+        isEditingTitle={editingTodoId === todo.id}
+        editTitle={editTitle}
+        onEditTitleChange={onEditTitleChange}
+        onStartEditTitle={() => onStartEditTitle(todo.id)}
+        onSaveEditTitle={onSaveEditTitle}
+        onCancelEditTitle={onCancelEditTitle}
       />
     </li>
   );
@@ -436,15 +533,27 @@ function TodoRow({
   onRemove,
   onExecutionDateChange,
   onDueDateChange,
+  editingTodoId,
+  editTitle,
+  onEditTitleChange,
+  onStartEditTitle,
+  onSaveEditTitle,
+  onCancelEditTitle,
 }: {
   todo: Todo;
   onToggle: (id: string) => void;
   onRemove: (id: string) => void;
   onExecutionDateChange: (id: string, v: string | null) => void;
   onDueDateChange: (id: string, v: string | null) => void;
+  editingTodoId: string | null;
+  editTitle: string;
+  onEditTitleChange: (v: string) => void;
+  onStartEditTitle: (id: string) => void;
+  onSaveEditTitle: () => void;
+  onCancelEditTitle: () => void;
 }) {
   return (
-    <li className="group flex items-center gap-3 p-4 rounded-2xl bg-white border border-slate-200/80 shadow-sm hover:shadow-md transition-all duration-200 ease-out">
+    <li className="group flex items-center gap-2.5 px-4 py-2.5 rounded-2xl bg-white border border-slate-200/80 shadow-sm hover:shadow-md transition-all duration-200 ease-out">
       <TodoRowContent
         todo={todo}
         onToggle={onToggle}
@@ -453,38 +562,131 @@ function TodoRow({
         onDueDateChange={onDueDateChange}
         showDragHandle={false}
         dragHandle={null}
+        isEditingTitle={editingTodoId === todo.id}
+        editTitle={editTitle}
+        onEditTitleChange={onEditTitleChange}
+        onStartEditTitle={() => onStartEditTitle(todo.id)}
+        onSaveEditTitle={onSaveEditTitle}
+        onCancelEditTitle={onCancelEditTitle}
       />
     </li>
   );
 }
 
-// ——— 탭 버튼 (Work / Life / All) ———
-function Tabs({
-  tabs,
+// ——— 동적 카테고리 탭 (+ 버튼으로 새 탭 추가, 커스텀 탭 X 삭제) ———
+function CategoryTabs({
+  categories,
   active,
   onSelect,
+  onAddCategory,
+  onRemoveCategory,
+  showAllOption = false,
 }: {
-  tabs: { id: TabFilter; label: string; icon: React.ReactNode }[];
-  active: TabFilter;
-  onSelect: (id: TabFilter) => void;
+  categories: string[];
+  active: string;
+  onSelect: (id: string) => void;
+  onAddCategory: (name: string) => void;
+  onRemoveCategory?: (name: string) => void;
+  showAllOption?: boolean;
 }) {
+  const [isAdding, setIsAdding] = useState(false);
+  const [newName, setNewName] = useState("");
+
+  const handleAdd = () => {
+    const trimmed = newName.trim();
+    if (trimmed && !categories.includes(trimmed) && trimmed.toLowerCase() !== "inbox") {
+      onAddCategory(trimmed);
+      setNewName("");
+      setIsAdding(false);
+    } else {
+      setIsAdding(false);
+      setNewName("");
+    }
+  };
+
+  const getTabActiveClass = (cat: string) => {
+    if (active !== cat) return "bg-gray-100 text-gray-600 hover:bg-white/70 hover:text-gray-800";
+    return "bg-white text-black shadow-sm border border-slate-200/80";
+  };
+
+  const getTabIconColorClass = (cat: string) => {
+    if (cat === "Work") return "text-blue-500";
+    if (cat === "Life") return "text-green-500";
+    return "text-gray-500";
+  };
+
   return (
-    <div className="flex gap-1 p-1 rounded-lg bg-slate-100/80 border border-slate-200/80 w-fit">
-      {tabs.map((tab) => (
+    <div className="flex flex-wrap items-center gap-1 p-1 rounded-lg bg-slate-100/80 border border-slate-200/80 w-fit">
+      {showAllOption && (
         <button
-          key={tab.id}
           type="button"
-          onClick={() => onSelect(tab.id)}
+          onClick={() => onSelect("all")}
           className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-slate-300 focus:ring-offset-1 ${
-            active === tab.id
-              ? "bg-white text-slate-800 shadow-sm border border-slate-200/80"
-              : "text-slate-600 hover:text-slate-800 hover:bg-white/50"
+            active === "all"
+              ? "bg-white text-black shadow-sm border border-slate-200/80"
+              : "bg-gray-100 text-gray-600 hover:bg-white/70 hover:text-gray-800"
           }`}
         >
-          {tab.icon}
-          {tab.label}
+          <ListTodo className="w-4 h-4 text-slate-500" />
+          All
         </button>
+      )}
+      {categories.map((cat) => (
+        <span key={cat} className="inline-flex items-center gap-0.5">
+          <button
+            type="button"
+            onClick={() => onSelect(cat)}
+            className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-slate-300 focus:ring-offset-1 ${getTabActiveClass(cat)}`}
+          >
+            <span className={getTabIconColorClass(cat)}>{getCategoryIcon(cat)}</span>
+            {cat}
+          </button>
+          {onRemoveCategory && cat !== "Work" && cat !== "Life" && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                if (confirm("이 카테고리를 삭제하시겠습니까?")) onRemoveCategory(cat);
+              }}
+              className="p-1 rounded text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors focus:outline-none focus:ring-2 focus:ring-red-200"
+              aria-label={`${cat} 카테고리 삭제`}
+            >
+              <X size={14} />
+            </button>
+          )}
+        </span>
       ))}
+      {isAdding ? (
+        <span className="flex items-center gap-1 px-2 py-1 rounded-md bg-white border border-slate-200/80 shadow-sm">
+          <input
+            type="text"
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                handleAdd();
+              }
+              if (e.key === "Escape") {
+                setNewName("");
+                setIsAdding(false);
+              }
+            }}
+            placeholder="카테고리 이름"
+            className="w-24 min-w-0 px-2 py-1 text-sm rounded border-0 outline-none focus:ring-0 bg-transparent"
+            autoFocus
+          />
+        </span>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setIsAdding(true)}
+          className="flex items-center justify-center w-8 h-8 rounded-md text-slate-500 hover:text-indigo-600 hover:bg-white/80 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-300"
+          aria-label="카테고리 추가"
+        >
+          <Plus className="w-4 h-4" />
+        </button>
+      )}
     </div>
   );
 }
@@ -500,17 +702,45 @@ export default function TodoApp() {
   // 정렬: 실행일 | 마감일 | 추가한 날짜 | 이름 | 수동
   const [sortBy, setSortBy] = useState<SortBy>("manual");
 
-  // Inbox: work | life
-  const [inboxTab, setInboxTab] = useState<"work" | "life">("work");
+  // 동적 카테고리 (localStorage 연동)
+  const [categories, setCategories] = useState<string[]>(() => loadCategories());
+  useEffect(() => {
+    try {
+      localStorage.setItem(CATEGORIES_STORAGE_KEY, JSON.stringify(categories));
+    } catch {}
+  }, [categories]);
+
+  const addCategory = (name: string) => {
+    const trimmed = name.trim();
+    if (!trimmed || trimmed.toLowerCase() === "inbox" || categories.includes(trimmed)) return;
+    setCategories((prev) => [...prev, trimmed]);
+  };
+
+  const removeCategory = (name: string) => {
+    setCategories((prev) => prev.filter((c) => c !== name));
+    if (activeInboxTab === name) setActiveInboxTab("Work");
+    if (todayTab === name) setTodayTab("all");
+  };
+
+  // Inbox 화면: 상단 탭 = Work, Life, ... (Inbox 탭 없음), 기본 선택 Work
+  const [activeInboxTab, setActiveInboxTab] = useState<string>("Work");
   const [inboxInput, setInboxInput] = useState("");
   const [inboxExecutionDate, setInboxExecutionDate] = useState(() => getTodayISO());
   const [inboxDueDate, setInboxDueDate] = useState("");
 
-  // Today: all | work | life
-  const [todayTab, setTodayTab] = useState<TabFilter>("all");
+  // Today: all | 카테고리명
+  const [todayTab, setTodayTab] = useState<string>("all");
   const [todayInput, setTodayInput] = useState("");
   const [todayExecutionDate, setTodayExecutionDate] = useState(() => getTodayISO());
   const [todayDueDate, setTodayDueDate] = useState("");
+
+  // 카테고리 목록 변경 시 선택 탭 유효성 (상단 탭만; 사이드바 Inbox는 미사용)
+  useEffect(() => {
+    if (categories.length && !categories.includes(activeInboxTab)) setActiveInboxTab("Work");
+  }, [categories, activeInboxTab]);
+  useEffect(() => {
+    if (todayTab !== "all" && categories.length && !categories.includes(todayTab)) setTodayTab("all");
+  }, [categories, todayTab]);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -551,17 +781,18 @@ export default function TodoApp() {
 
   const addTodo = async (
     text: string,
-    category: Category,
+    category: string,
     executionDate?: string | null,
     dueDate?: string | null
   ) => {
     const nextOrder =
       todos.length === 0 ? 0 : Math.max(...todos.map((t) => t.order_index)) + 100;
     const execDate = executionDate || getTodayISO();
+    const categoryValue = category === "Inbox" ? null : category;
     const { error } = await supabase.from("todos").insert({
       title: text,
       is_done: false,
-      category,
+      category: categoryValue,
       order_index: nextOrder,
       execution_date: execDate,
       due_date: dueDate || null,
@@ -620,6 +851,41 @@ export default function TodoApp() {
     await fetchTodos();
   };
 
+  const updateTodoTitle = async (id: string, title: string) => {
+    const trimmed = title.trim();
+    if (!trimmed) return;
+    const { error } = await supabase.from("todos").update({ title: trimmed }).eq("id", id);
+    if (error) {
+      console.error("todos update title error:", { message: error.message, code: error.code });
+      return;
+    }
+    await fetchTodos();
+  };
+
+  const [editingTodoId, setEditingTodoId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState("");
+
+  const handleStartEditTitle = (id: string) => {
+    const t = todos.find((x) => x.id === id);
+    if (t) {
+      setEditingTodoId(id);
+      setEditTitle(t.title);
+    }
+  };
+
+  const handleSaveEditTitle = async () => {
+    if (!editingTodoId) return;
+    const trimmed = editTitle.trim();
+    if (trimmed) await updateTodoTitle(editingTodoId, trimmed);
+    setEditingTodoId(null);
+    setEditTitle("");
+  };
+
+  const handleCancelEditTitle = () => {
+    setEditingTodoId(null);
+    setEditTitle("");
+  };
+
   const sortedTodos = useMemo(
     () => [...todos].sort((a, b) => a.order_index - b.order_index),
     [todos]
@@ -651,9 +917,17 @@ export default function TodoApp() {
     });
   }, [sortedTodos, sortBy]);
 
-  const filterByCategory = (list: Todo[], tab: TabFilter) => {
-    if (tab === "all") return list;
-    return list.filter((t) => t.category === tab);
+  const filterByCategory = (list: Todo[], selectedTab: string) => {
+    if (selectedTab === "all") return list;
+    if (selectedTab === "Inbox") {
+      return list.filter((t) => {
+        const c = (t.category || "").trim().toLowerCase();
+        return !t.category || c === "" || c === "general" || c === "inbox";
+      });
+    }
+    return list.filter(
+      (t) => t.category && t.category.toLowerCase() === selectedTab.toLowerCase()
+    );
   };
 
   /** Today 메뉴일 때: execution_date가 오늘인 항목만 먼저 필터 */
@@ -676,7 +950,7 @@ export default function TodoApp() {
     if (!over || active.id === over.id) return;
 
     const tab =
-      menu === "inbox" ? inboxTab : menu === "today" ? todayTab : "all";
+      menu === "inbox" ? activeInboxTab : menu === "today" ? todayTab : "all";
     const baseList = menu === "today" ? todayFilteredTodos : displaySortedTodos;
     const filtered = filterByCategory(baseList, tab);
     const oldIndex = filtered.findIndex((t) => t.id === active.id);
@@ -705,13 +979,6 @@ export default function TodoApp() {
       )
     );
   };
-
-  const sidebarItems: { id: SidebarMenu; label: string; icon: React.ReactNode }[] = [
-    { id: "inbox", label: "Inbox", icon: <Inbox className="w-5 h-5" /> },
-    { id: "today", label: "Today", icon: <Sun className="w-5 h-5" /> },
-    { id: "next", label: "Next", icon: <ListTodo className="w-5 h-5" /> },
-    { id: "calendar", label: "Calendar", icon: <Calendar className="w-5 h-5" /> },
-  ];
 
   if (!authChecked) {
     return (
@@ -745,21 +1012,48 @@ export default function TodoApp() {
             </div>
           </h1>
           <nav className="flex flex-row md:flex-col gap-1 flex-wrap md:flex-nowrap">
-            {sidebarItems.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => setMenu(item.id)}
-                className={`w-auto md:w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-slate-200 ${
-                  menu === item.id
-                    ? "bg-slate-200 text-slate-800"
-                    : "text-slate-600 hover:bg-slate-100 hover:text-slate-800"
-                }`}
-              >
-                {item.icon}
-                {item.label}
-              </button>
-            ))}
+            <button
+              type="button"
+              onClick={() => setMenu("inbox")}
+              className={`w-auto md:w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-slate-200 ${
+                menu === "inbox" ? "bg-slate-200 text-slate-800" : "text-slate-600 hover:bg-slate-100 hover:text-slate-800"
+              }`}
+            >
+              <Inbox className="w-5 h-5" />
+              Inbox
+            </button>
+            <button
+              type="button"
+              onClick={() => { setMenu("today"); setTodayTab("all"); }}
+              className={`w-auto md:w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-slate-200 ${
+                menu === "today"
+                  ? "bg-slate-200 text-slate-800"
+                  : "text-slate-600 hover:bg-slate-100 hover:text-slate-800"
+              }`}
+            >
+              <Sun className="w-5 h-5" />
+              Today
+            </button>
+            <button
+              type="button"
+              onClick={() => setMenu("next")}
+              className={`w-auto md:w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-slate-200 ${
+                menu === "next" ? "bg-slate-200 text-slate-800" : "text-slate-600 hover:bg-slate-100 hover:text-slate-800"
+              }`}
+            >
+              <ListTodo className="w-5 h-5" />
+              Next
+            </button>
+            <button
+              type="button"
+              onClick={() => setMenu("calendar")}
+              className={`w-auto md:w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-slate-200 ${
+                menu === "calendar" ? "bg-slate-200 text-slate-800" : "text-slate-600 hover:bg-slate-100 hover:text-slate-800"
+              }`}
+            >
+              <Calendar className="w-5 h-5" />
+              Calendar
+            </button>
           </nav>
         </div>
         <button
@@ -809,21 +1103,12 @@ export default function TodoApp() {
             {menu === "inbox" && (
               <>
                 <div className="mb-6">
-                  <Tabs
-                    tabs={[
-                      {
-                        id: "work",
-                        label: "Work",
-                        icon: <Briefcase className="w-4 h-4 text-blue-600" />,
-                      },
-                      {
-                        id: "life",
-                        label: "Life",
-                        icon: <Heart className="w-4 h-4 text-emerald-600" />,
-                      },
-                    ]}
-                    active={inboxTab}
-                    onSelect={(id) => setInboxTab(id as "work" | "life")}
+                  <CategoryTabs
+                    categories={categories}
+                    active={activeInboxTab}
+                    onSelect={setActiveInboxTab}
+                    onAddCategory={addCategory}
+                    onRemoveCategory={removeCategory}
                   />
                 </div>
                 <div className="mb-2 flex justify-end">
@@ -851,28 +1136,27 @@ export default function TodoApp() {
                     dueDate={inboxDueDate}
                     onDueDateChange={setInboxDueDate}
                     onSubmit={() => {
-                      addTodo(inboxInput.trim(), inboxTab, inboxExecutionDate || null, inboxDueDate || null);
+                      addTodo(inboxInput.trim(), activeInboxTab, inboxExecutionDate || null, inboxDueDate || null);
                       setInboxInput("");
                       setInboxExecutionDate(getTodayISO());
                       setInboxDueDate("");
                     }}
-                    placeholder={`${inboxTab === "work" ? "Work" : "Life"} 할 일 추가...`}
-                    category={inboxTab}
+                    placeholder="할 일 추가..."
                   />
                 </div>
                 {sortBy === "manual" ? (
                   <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
                     <SortableContext
-                      items={filterByCategory(displaySortedTodos, inboxTab).map((t) => t.id)}
+                      items={filterByCategory(displaySortedTodos, activeInboxTab).map((t) => t.id)}
                       strategy={verticalListSortingStrategy}
                     >
                       <ul className="flex-1 overflow-y-auto space-y-3 min-h-[200px]">
-                        {filterByCategory(displaySortedTodos, inboxTab).length === 0 ? (
+                        {filterByCategory(displaySortedTodos, activeInboxTab).length === 0 ? (
                           <li className="py-16 text-center text-slate-400 text-sm rounded-2xl bg-white/60 border border-dashed border-slate-200">
                             할 일을 입력하고 추가해 보세요
                           </li>
                         ) : (
-                          filterByCategory(displaySortedTodos, inboxTab).map((todo) => (
+                          filterByCategory(displaySortedTodos, activeInboxTab).map((todo) => (
                             <SortableTodoRow
                               key={todo.id}
                               todo={todo}
@@ -880,6 +1164,12 @@ export default function TodoApp() {
                               onRemove={removeTodo}
                               onExecutionDateChange={updateTodoExecutionDate}
                               onDueDateChange={updateTodoDueDate}
+                              editingTodoId={editingTodoId}
+                              editTitle={editTitle}
+                              onEditTitleChange={setEditTitle}
+                              onStartEditTitle={handleStartEditTitle}
+                              onSaveEditTitle={handleSaveEditTitle}
+                              onCancelEditTitle={handleCancelEditTitle}
                             />
                           ))
                         )}
@@ -888,12 +1178,12 @@ export default function TodoApp() {
                   </DndContext>
                 ) : (
                   <ul className="flex-1 overflow-y-auto space-y-3 min-h-[200px]">
-                    {filterByCategory(displaySortedTodos, inboxTab).length === 0 ? (
+                    {filterByCategory(displaySortedTodos, activeInboxTab).length === 0 ? (
                       <li className="py-16 text-center text-slate-400 text-sm rounded-2xl bg-white/60 border border-dashed border-slate-200">
                         할 일을 입력하고 추가해 보세요
                       </li>
                     ) : (
-                      filterByCategory(displaySortedTodos, inboxTab).map((todo) => (
+                      filterByCategory(displaySortedTodos, activeInboxTab).map((todo) => (
                         <TodoRow
                           key={todo.id}
                           todo={todo}
@@ -901,6 +1191,12 @@ export default function TodoApp() {
                           onRemove={removeTodo}
                           onExecutionDateChange={updateTodoExecutionDate}
                           onDueDateChange={updateTodoDueDate}
+                          editingTodoId={editingTodoId}
+                          editTitle={editTitle}
+                          onEditTitleChange={setEditTitle}
+                          onStartEditTitle={handleStartEditTitle}
+                          onSaveEditTitle={handleSaveEditTitle}
+                          onCancelEditTitle={handleCancelEditTitle}
                         />
                       ))
                     )}
@@ -912,26 +1208,13 @@ export default function TodoApp() {
             {menu === "today" && (
               <>
                 <div className="mb-6">
-                  <Tabs
-                    tabs={[
-                      {
-                        id: "all",
-                        label: "All",
-                        icon: <ListTodo className="w-4 h-4 text-slate-600" />,
-                      },
-                      {
-                        id: "work",
-                        label: "Work",
-                        icon: <Briefcase className="w-4 h-4 text-blue-600" />,
-                      },
-                      {
-                        id: "life",
-                        label: "Life",
-                        icon: <Heart className="w-4 h-4 text-emerald-600" />,
-                      },
-                    ]}
+                  <CategoryTabs
+                    categories={categories}
                     active={todayTab}
                     onSelect={setTodayTab}
+                    onAddCategory={addCategory}
+                    onRemoveCategory={removeCategory}
+                    showAllOption
                   />
                 </div>
                 <div className="mb-2 flex justify-end">
@@ -970,6 +1253,12 @@ export default function TodoApp() {
                               onRemove={removeTodo}
                               onExecutionDateChange={updateTodoExecutionDate}
                               onDueDateChange={updateTodoDueDate}
+                              editingTodoId={editingTodoId}
+                              editTitle={editTitle}
+                              onEditTitleChange={setEditTitle}
+                              onStartEditTitle={handleStartEditTitle}
+                              onSaveEditTitle={handleSaveEditTitle}
+                              onCancelEditTitle={handleCancelEditTitle}
                             />
                           ))
                         )}
@@ -991,6 +1280,12 @@ export default function TodoApp() {
                           onRemove={removeTodo}
                           onExecutionDateChange={updateTodoExecutionDate}
                           onDueDateChange={updateTodoDueDate}
+                          editingTodoId={editingTodoId}
+                          editTitle={editTitle}
+                          onEditTitleChange={setEditTitle}
+                          onStartEditTitle={handleStartEditTitle}
+                          onSaveEditTitle={handleSaveEditTitle}
+                          onCancelEditTitle={handleCancelEditTitle}
                         />
                       ))
                     )}
@@ -1005,19 +1300,13 @@ export default function TodoApp() {
                     dueDate={todayDueDate}
                     onDueDateChange={setTodayDueDate}
                     onSubmit={() => {
-                      const category: Category =
-                        todayTab === "life" ? "life" : "work";
+                      const category = todayTab === "all" ? "Work" : todayTab;
                       addTodo(todayInput.trim(), category, todayExecutionDate || null, todayDueDate || null);
                       setTodayInput("");
                       setTodayExecutionDate(getTodayISO());
                       setTodayDueDate("");
                     }}
-                    placeholder={
-                      todayTab === "all"
-                        ? "할 일 추가 (기본: Work)"
-                        : `${todayTab === "work" ? "Work" : "Life"} 할 일 추가...`
-                    }
-                    category={todayTab === "life" ? "life" : "work"}
+                    placeholder="할 일 추가..."
                   />
                 </div>
               </>
