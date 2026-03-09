@@ -25,7 +25,6 @@ import {
   Trash2,
   Check,
   Plus,
-  GripVertical,
   Play,
   Flag,
   Briefcase,
@@ -67,12 +66,13 @@ type Todo = {
   is_done: boolean;
   category: string | null;
   created_at?: string;
+  completed_at?: string | null;
   order_index: number;
   due_date?: string | null;
   execution_date?: string | null;
 };
 
-type SortBy = "execution_date" | "due_date" | "created_at" | "title" | "manual";
+type SortBy = "execution_date" | "due_date" | "created_at" | "title";
 
 function getTodayISO() {
   return new Date().toISOString().slice(0, 10);
@@ -87,6 +87,7 @@ function mapRowToTodo(
     is_done: boolean;
     category?: string | null;
     created_at?: string;
+    completed_at?: string | null;
     order_index?: number | null;
     due_date?: string | null;
     execution_date?: string | null;
@@ -103,6 +104,7 @@ function mapRowToTodo(
     is_done: row.is_done ?? false,
     category,
     created_at: row.created_at,
+    completed_at: row.completed_at ?? null,
     order_index: row.order_index ?? index,
     due_date: row.due_date ?? null,
     execution_date: row.execution_date ?? null,
@@ -254,8 +256,6 @@ function TodoRowContent({
   onRemove,
   onExecutionDateChange,
   onDueDateChange,
-  showDragHandle,
-  dragHandle,
   isEditingTitle,
   editTitle,
   onEditTitleChange,
@@ -268,8 +268,6 @@ function TodoRowContent({
   onRemove: (id: string) => void;
   onExecutionDateChange: (id: string, v: string | null) => void;
   onDueDateChange: (id: string, v: string | null) => void;
-  showDragHandle: boolean;
-  dragHandle: React.ReactNode;
   isEditingTitle: boolean;
   editTitle: string;
   onEditTitleChange: (v: string) => void;
@@ -289,7 +287,6 @@ function TodoRowContent({
 
   return (
     <>
-      {showDragHandle ? dragHandle : <span className="w-8 shrink-0" aria-hidden />}
       <button
         type="button"
         onClick={() => onToggle(todo.id)}
@@ -449,7 +446,7 @@ function TodoRowContent({
   );
 }
 
-// ——— 정렬 가능한 할 일 카드 (드래그 핸들 + 드래그 중 스타일) ———
+// ——— 정렬 가능한 할 일 카드 (카드 전체 Long Press 드래그 + 드래그 중 스타일) ———
 function SortableTodoRow({
   todo,
   onToggle,
@@ -493,8 +490,12 @@ function SortableTodoRow({
     <li
       ref={setNodeRef}
       style={style}
+      {...attributes}
+      {...listeners}
       className={`group flex items-center gap-2.5 px-4 py-2.5 rounded-2xl bg-white border border-slate-200/80 shadow-sm hover:shadow-md transition-all duration-200 ease-out ${
-        isDragging ? "opacity-80 shadow-xl ring-2 ring-indigo-500/30 z-10" : ""
+        isDragging
+          ? "scale-105 shadow-2xl z-50 ring-2 ring-blue-400 opacity-95 cursor-grabbing"
+          : "cursor-pointer"
       }`}
     >
       <TodoRowContent
@@ -503,18 +504,6 @@ function SortableTodoRow({
         onRemove={onRemove}
         onExecutionDateChange={onExecutionDateChange}
         onDueDateChange={onDueDateChange}
-        showDragHandle
-        dragHandle={
-          <button
-            type="button"
-            className="shrink-0 p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 touch-none cursor-grab active:cursor-grabbing"
-            aria-label="드래그"
-            {...attributes}
-            {...listeners}
-          >
-            <GripVertical className="w-5 h-5" />
-          </button>
-        }
         isEditingTitle={editingTodoId === todo.id}
         editTitle={editTitle}
         onEditTitleChange={onEditTitleChange}
@@ -560,8 +549,6 @@ function TodoRow({
         onRemove={onRemove}
         onExecutionDateChange={onExecutionDateChange}
         onDueDateChange={onDueDateChange}
-        showDragHandle={false}
-        dragHandle={null}
         isEditingTitle={editingTodoId === todo.id}
         editTitle={editTitle}
         onEditTitleChange={onEditTitleChange}
@@ -699,8 +686,8 @@ export default function TodoApp() {
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
 
-  // 정렬: 실행일 | 마감일 | 추가한 날짜 | 이름 | 수동
-  const [sortBy, setSortBy] = useState<SortBy>("manual");
+  // 정렬: 실행일 | 마감일 | 추가한 날짜 | 이름
+  const [sortBy, setSortBy] = useState<SortBy>("execution_date");
 
   // 동적 카테고리 (localStorage 연동)
   const [categories, setCategories] = useState<string[]>(() => loadCategories());
@@ -762,7 +749,7 @@ export default function TodoApp() {
     setFetchError(null);
     const { data, error } = await supabase
       .from("todos")
-      .select("id, title, is_done, category, created_at, order_index, due_date, execution_date")
+      .select("id, title, is_done, category, created_at, completed_at, order_index, due_date, execution_date")
       .order("order_index", { ascending: true });
     if (error) {
       const msg = error.message ?? String(error);
@@ -807,9 +794,12 @@ export default function TodoApp() {
   const toggleTodo = async (id: string) => {
     const todo = todos.find((t) => t.id === id);
     if (!todo) return;
+    const nextDone = !todo.is_done;
+    const completedAt = nextDone ? new Date().toISOString() : null;
+    const nextExecutionDate = nextDone ? getTodayISO() : todo.execution_date ?? null;
     const { error } = await supabase
       .from("todos")
-      .update({ is_done: !todo.is_done })
+      .update({ is_done: nextDone, completed_at: completedAt, execution_date: nextExecutionDate })
       .eq("id", id);
     if (error) {
       console.error("todos update error:", { message: error.message, code: error.code });
@@ -893,9 +883,6 @@ export default function TodoApp() {
 
   const displaySortedTodos = useMemo(() => {
     const list = [...sortedTodos];
-    if (sortBy === "manual") {
-      return list;
-    }
     return list.sort((a, b) => {
       if (sortBy === "execution_date") {
         const aEx = a.execution_date ?? "9999-99-99";
@@ -936,12 +923,45 @@ export default function TodoApp() {
     return displaySortedTodos.filter((t) => t.execution_date === todayStr);
   }, [displaySortedTodos]);
 
+  // Today 메뉴일 때: execution_date가 오늘 이전이면서 아직 완료되지 않은(미완료) 항목
+  const todayOverdueTodos = useMemo(() => {
+    const todayStr = getTodayISO();
+    return displaySortedTodos.filter(
+      (t) => t.execution_date && t.execution_date < todayStr && !t.is_done
+    );
+  }, [displaySortedTodos]);
+
+  const handleMoveOverdueToToday = async () => {
+    const overdue = filterByCategory(todayOverdueTodos, todayTab);
+    if (overdue.length === 0) return;
+    if (
+      !confirm(
+        "기한이 지난 모든 할 일을 오늘 일정으로 가져오시겠습니까?"
+      )
+    )
+      return;
+    const todayStr = getTodayISO();
+    const ids = overdue.map((t) => t.id);
+    const { error } = await supabase
+      .from("todos")
+      .update({ execution_date: todayStr })
+      .in("id", ids);
+    if (error) {
+      console.error("todos bulk update execution_date error:", {
+        message: error.message,
+        code: error.code,
+      });
+      return;
+    }
+    await fetchTodos();
+  };
+
   const sensors = useSensors(
     useSensor(PointerSensor, {
-      activationConstraint: { distance: 8 },
+      activationConstraint: { delay: 200, tolerance: 5 },
     }),
     useSensor(TouchSensor, {
-      activationConstraint: { delay: 200, tolerance: 6 },
+      activationConstraint: { delay: 200, tolerance: 5 },
     })
   );
 
@@ -1123,7 +1143,6 @@ export default function TodoApp() {
                       <option value="due_date">마감일</option>
                       <option value="created_at">추가한 날짜</option>
                       <option value="title">이름</option>
-                      <option value="manual">수동</option>
                     </select>
                   </label>
                 </div>
@@ -1144,64 +1163,81 @@ export default function TodoApp() {
                     placeholder="할 일 추가..."
                   />
                 </div>
-                {sortBy === "manual" ? (
-                  <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
-                    <SortableContext
-                      items={filterByCategory(displaySortedTodos, activeInboxTab).map((t) => t.id)}
-                      strategy={verticalListSortingStrategy}
-                    >
-                      <ul className="flex-1 overflow-y-auto space-y-3 min-h-[200px]">
-                        {filterByCategory(displaySortedTodos, activeInboxTab).length === 0 ? (
-                          <li className="py-16 text-center text-slate-400 text-sm rounded-2xl bg-white/60 border border-dashed border-slate-200">
-                            할 일을 입력하고 추가해 보세요
-                          </li>
-                        ) : (
-                          filterByCategory(displaySortedTodos, activeInboxTab).map((todo) => (
-                            <SortableTodoRow
-                              key={todo.id}
-                              todo={todo}
-                              onToggle={toggleTodo}
-                              onRemove={removeTodo}
-                              onExecutionDateChange={updateTodoExecutionDate}
-                              onDueDateChange={updateTodoDueDate}
-                              editingTodoId={editingTodoId}
-                              editTitle={editTitle}
-                              onEditTitleChange={setEditTitle}
-                              onStartEditTitle={handleStartEditTitle}
-                              onSaveEditTitle={handleSaveEditTitle}
-                              onCancelEditTitle={handleCancelEditTitle}
-                            />
-                          ))
-                        )}
-                      </ul>
-                    </SortableContext>
-                  </DndContext>
-                ) : (
-                  <ul className="flex-1 overflow-y-auto space-y-3 min-h-[200px]">
-                    {filterByCategory(displaySortedTodos, activeInboxTab).length === 0 ? (
-                      <li className="py-16 text-center text-slate-400 text-sm rounded-2xl bg-white/60 border border-dashed border-slate-200">
-                        할 일을 입력하고 추가해 보세요
-                      </li>
-                    ) : (
-                      filterByCategory(displaySortedTodos, activeInboxTab).map((todo) => (
-                        <TodoRow
-                          key={todo.id}
-                          todo={todo}
-                          onToggle={toggleTodo}
-                          onRemove={removeTodo}
-                          onExecutionDateChange={updateTodoExecutionDate}
-                          onDueDateChange={updateTodoDueDate}
-                          editingTodoId={editingTodoId}
-                          editTitle={editTitle}
-                          onEditTitleChange={setEditTitle}
-                          onStartEditTitle={handleStartEditTitle}
-                          onSaveEditTitle={handleSaveEditTitle}
-                          onCancelEditTitle={handleCancelEditTitle}
-                        />
-                      ))
-                    )}
-                  </ul>
-                )}
+                <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
+                  <SortableContext
+                    items={filterByCategory(displaySortedTodos, activeInboxTab).map((t) => t.id)}
+                    strategy={verticalListSortingStrategy}
+                  >
+                    <ul className="flex-1 overflow-y-auto space-y-3 min-h-[200px]">
+                      {(() => {
+                        const filtered = filterByCategory(displaySortedTodos, activeInboxTab);
+                        if (filtered.length === 0) {
+                          return (
+                            <li className="py-16 text-center text-slate-400 text-sm rounded-2xl bg-white/60 border border-dashed border-slate-200">
+                              할 일을 입력하고 추가해 보세요
+                            </li>
+                          );
+                        }
+                        const activeList = filtered.filter((t) => !t.is_done);
+                        const completedList = filtered
+                          .filter((t) => t.is_done)
+                          .slice()
+                          .sort((a, b) => {
+                            const aT = a.completed_at ? new Date(a.completed_at).getTime() : 0;
+                            const bT = b.completed_at ? new Date(b.completed_at).getTime() : 0;
+                            return bT - aT;
+                          });
+                        return (
+                          <>
+                            {activeList.map((todo) => (
+                              <SortableTodoRow
+                                key={todo.id}
+                                todo={todo}
+                                onToggle={toggleTodo}
+                                onRemove={removeTodo}
+                                onExecutionDateChange={updateTodoExecutionDate}
+                                onDueDateChange={updateTodoDueDate}
+                                editingTodoId={editingTodoId}
+                                editTitle={editTitle}
+                                onEditTitleChange={setEditTitle}
+                                onStartEditTitle={handleStartEditTitle}
+                                onSaveEditTitle={handleSaveEditTitle}
+                                onCancelEditTitle={handleCancelEditTitle}
+                              />
+                            ))}
+                            {completedList.length > 0 && (
+                              <li>
+                                <div className="flex items-center my-2 text-xs">
+                                  <div className="flex-grow border-t border-gray-200" />
+                                  <span className="px-2 text-gray-400 text-xs font-medium">
+                                    완료된 할일
+                                  </span>
+                                  <div className="flex-grow border-t border-gray-200" />
+                                </div>
+                              </li>
+                            )}
+                            {completedList.map((todo) => (
+                              <SortableTodoRow
+                                key={todo.id}
+                                todo={todo}
+                                onToggle={toggleTodo}
+                                onRemove={removeTodo}
+                                onExecutionDateChange={updateTodoExecutionDate}
+                                onDueDateChange={updateTodoDueDate}
+                                editingTodoId={editingTodoId}
+                                editTitle={editTitle}
+                                onEditTitleChange={setEditTitle}
+                                onStartEditTitle={handleStartEditTitle}
+                                onSaveEditTitle={handleSaveEditTitle}
+                                onCancelEditTitle={handleCancelEditTitle}
+                              />
+                            ))}
+                          </>
+                        );
+                      })()}
+                    </ul>
+                  </SortableContext>
+                </DndContext>
               </>
             )}
 
@@ -1229,68 +1265,138 @@ export default function TodoApp() {
                       <option value="due_date">마감일</option>
                       <option value="created_at">추가한 날짜</option>
                       <option value="title">이름</option>
-                      <option value="manual">수동</option>
                     </select>
                   </label>
                 </div>
-                {sortBy === "manual" ? (
-                  <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
-                    <SortableContext
-                      items={filterByCategory(todayFilteredTodos, todayTab).map((t) => t.id)}
-                      strategy={verticalListSortingStrategy}
-                    >
-                      <ul className="flex-1 overflow-y-auto space-y-3 min-h-0 mb-6">
-                        {filterByCategory(todayFilteredTodos, todayTab).length === 0 ? (
-                          <li className="py-16 text-center text-slate-400 text-sm rounded-2xl bg-white/60 border border-dashed border-slate-200">
-                            오늘 실행할 일이 없습니다
-                          </li>
-                        ) : (
-                          filterByCategory(todayFilteredTodos, todayTab).map((todo) => (
-                            <SortableTodoRow
-                              key={todo.id}
-                              todo={todo}
-                              onToggle={toggleTodo}
-                              onRemove={removeTodo}
-                              onExecutionDateChange={updateTodoExecutionDate}
-                              onDueDateChange={updateTodoDueDate}
-                              editingTodoId={editingTodoId}
-                              editTitle={editTitle}
-                              onEditTitleChange={setEditTitle}
-                              onStartEditTitle={handleStartEditTitle}
-                              onSaveEditTitle={handleSaveEditTitle}
-                              onCancelEditTitle={handleCancelEditTitle}
-                            />
-                          ))
-                        )}
-                      </ul>
-                    </SortableContext>
-                  </DndContext>
-                ) : (
-                  <ul className="flex-1 overflow-y-auto space-y-3 min-h-0 mb-6">
-                    {filterByCategory(todayFilteredTodos, todayTab).length === 0 ? (
-                      <li className="py-16 text-center text-slate-400 text-sm rounded-2xl bg-white/60 border border-dashed border-slate-200">
-                        오늘 실행할 일이 없습니다
-                      </li>
-                    ) : (
-                      filterByCategory(todayFilteredTodos, todayTab).map((todo) => (
-                        <TodoRow
-                          key={todo.id}
-                          todo={todo}
-                          onToggle={toggleTodo}
-                          onRemove={removeTodo}
-                          onExecutionDateChange={updateTodoExecutionDate}
-                          onDueDateChange={updateTodoDueDate}
-                          editingTodoId={editingTodoId}
-                          editTitle={editTitle}
-                          onEditTitleChange={setEditTitle}
-                          onStartEditTitle={handleStartEditTitle}
-                          onSaveEditTitle={handleSaveEditTitle}
-                          onCancelEditTitle={handleCancelEditTitle}
-                        />
-                      ))
-                    )}
-                  </ul>
-                )}
+                <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
+                  <SortableContext
+                    items={filterByCategory(todayFilteredTodos, todayTab).map((t) => t.id)}
+                    strategy={verticalListSortingStrategy}
+                  >
+                    <ul className="flex-1 overflow-y-auto space-y-3 min-h-0 mb-6">
+                      {(() => {
+                        const overdue = filterByCategory(todayOverdueTodos, todayTab);
+                        const todayList = filterByCategory(todayFilteredTodos, todayTab);
+                        if (overdue.length === 0 && todayList.length === 0) {
+                          return (
+                            <li className="py-16 text-center text-slate-400 text-sm rounded-2xl bg-white/60 border border-dashed border-slate-200">
+                              오늘 실행할 일이 없습니다
+                            </li>
+                          );
+                        }
+                        return (
+                          <>
+                            {overdue.length > 0 && (
+                              <li>
+                                <div className="flex items-center my-3 text-xs md:text-base">
+                                  <div className="flex-grow border-t border-gray-200" />
+                                  <div className="flex items-center gap-2 px-3">
+                                    <span className="font-medium text-gray-400 opacity-70 tracking-tight">
+                                      기한이 지난
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={handleMoveOverdueToToday}
+                                      className="px-3 py-1 rounded-full border border-gray-300 bg-gray-50 text-[11px] text-gray-500 hover:bg-gray-100 transition-colors"
+                                    >
+                                      🔄 모두 오늘로
+                                    </button>
+                                  </div>
+                                  <div className="flex-grow border-t border-gray-200" />
+                                </div>
+                              </li>
+                            )}
+                            {overdue.map((todo) => (
+                              <TodoRow
+                                key={todo.id}
+                                todo={todo}
+                                onToggle={toggleTodo}
+                                onRemove={removeTodo}
+                                onExecutionDateChange={updateTodoExecutionDate}
+                                onDueDateChange={updateTodoDueDate}
+                                editingTodoId={editingTodoId}
+                                editTitle={editTitle}
+                                onEditTitleChange={setEditTitle}
+                                onStartEditTitle={handleStartEditTitle}
+                                onSaveEditTitle={handleSaveEditTitle}
+                                onCancelEditTitle={handleCancelEditTitle}
+                              />
+                            ))}
+                            {overdue.length > 0 && (
+                              <li>
+                                <div className="flex items-center my-4 md:my-6 text-xs md:text-base">
+                                  <div className="flex-grow border-t border-gray-200" />
+                                  <span className="px-3 font-medium text-red-500 opacity-70 tracking-tight">
+                                    오늘
+                                  </span>
+                                  <div className="flex-grow border-t border-gray-200" />
+                                </div>
+                              </li>
+                            )}
+                            {(() => {
+                              const activeList = todayList.filter((t) => !t.is_done);
+                              const completedList = todayList
+                                .filter((t) => t.is_done)
+                                .slice()
+                                .sort((a, b) => {
+                                  const aT = a.completed_at ? new Date(a.completed_at).getTime() : 0;
+                                  const bT = b.completed_at ? new Date(b.completed_at).getTime() : 0;
+                                  return bT - aT;
+                                });
+                              return (
+                                <>
+                                  {activeList.map((todo) => (
+                                    <TodoRow
+                                      key={todo.id}
+                                      todo={todo}
+                                      onToggle={toggleTodo}
+                                      onRemove={removeTodo}
+                                      onExecutionDateChange={updateTodoExecutionDate}
+                                      onDueDateChange={updateTodoDueDate}
+                                      editingTodoId={editingTodoId}
+                                      editTitle={editTitle}
+                                      onEditTitleChange={setEditTitle}
+                                      onStartEditTitle={handleStartEditTitle}
+                                      onSaveEditTitle={handleSaveEditTitle}
+                                      onCancelEditTitle={handleCancelEditTitle}
+                                    />
+                                  ))}
+                                  {completedList.length > 0 && (
+                                    <li>
+                                      <div className="flex items-center my-2 text-xs">
+                                        <div className="flex-grow border-t border-gray-200" />
+                                        <span className="px-2 text-gray-400 text-xs font-medium">
+                                          완료된 할일
+                                        </span>
+                                        <div className="flex-grow border-t border-gray-200" />
+                                      </div>
+                                    </li>
+                                  )}
+                                  {completedList.map((todo) => (
+                                    <TodoRow
+                                      key={todo.id}
+                                      todo={todo}
+                                      onToggle={toggleTodo}
+                                      onRemove={removeTodo}
+                                      onExecutionDateChange={updateTodoExecutionDate}
+                                      onDueDateChange={updateTodoDueDate}
+                                      editingTodoId={editingTodoId}
+                                      editTitle={editTitle}
+                                      onEditTitleChange={setEditTitle}
+                                      onStartEditTitle={handleStartEditTitle}
+                                      onSaveEditTitle={handleSaveEditTitle}
+                                      onCancelEditTitle={handleCancelEditTitle}
+                                    />
+                                  ))}
+                                </>
+                              );
+                            })()}
+                          </>
+                        );
+                      })()}
+                    </ul>
+                  </SortableContext>
+                </DndContext>
                 <div className="rounded-2xl bg-white border border-slate-200/80 shadow-lg shadow-slate-200/50 p-2">
                   <TodoInput
                     value={todayInput}
