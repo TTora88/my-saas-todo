@@ -24,3 +24,19 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Next 뷰 가로 스크롤: 스크롤바 얇게 */
+.next-timeline-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(203 213 225) transparent;
+}
+.next-timeline-scroll::-webkit-scrollbar {
+  height: 6px;
+}
+.next-timeline-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.next-timeline-scroll::-webkit-scrollbar-thumb {
+  background: rgb(203 213 225);
+  border-radius: 3px;
+}

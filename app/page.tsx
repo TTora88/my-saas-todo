@@ -8,8 +8,13 @@ import {
   TouchSensor,
   useSensor,
   useSensors,
+  useDroppable,
+  useDndContext,
+  DragOverlay,
+  type DragStartEvent,
   type DragEndEvent,
 } from "@dnd-kit/core";
+import { restrictToVerticalAxis } from "@dnd-kit/modifiers";
 import {
   SortableContext,
   arrayMove,
@@ -36,6 +41,7 @@ import { supabase } from "@/src/lib/supabase";
 
 const DEFAULT_CATEGORIES = ["Work", "Life"];
 const CATEGORIES_STORAGE_KEY = "todo-categories";
+const WEEKDAY_KO = ["일", "월", "화", "수", "목", "금", "토"] as const;
 
 function getCategoryIcon(name: string, className = "w-4 h-4"): React.ReactNode {
   const n = (name || "").trim().toLowerCase();
@@ -74,9 +80,35 @@ type Todo = {
 
 type SortBy = "execution_date" | "due_date" | "created_at" | "title";
 
-function getTodayISO() {
-  return new Date().toISOString().slice(0, 10);
+function toLocalDateString(date: Date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
 }
+
+function getTodayISO() {
+  return toLocalDateString(new Date());
+}
+
+function addDays(date: Date, days: number) {
+  const d = new Date(date);
+  d.setDate(d.getDate() + days);
+  return d;
+}
+
+function formatMonthDay(date: Date) {
+  return `${date.getMonth() + 1}/${date.getDate()}`;
+}
+
+/** 주말 여부 (토=6, 일=0) */
+function isWeekend(date: Date) {
+  const d = date.getDay();
+  return d === 0 || d === 6;
+}
+
+/** 공휴일 목록 (YYYY-MM-DD). 필요 시 확장 */
+const HOLIDAYS_ISO: string[] = [];
 
 type SidebarMenu = "inbox" | "today" | "next" | "calendar";
 
@@ -262,6 +294,7 @@ function TodoRowContent({
   onStartEditTitle,
   onSaveEditTitle,
   onCancelEditTitle,
+  compact = false,
 }: {
   todo: Todo;
   onToggle: (id: string) => void;
@@ -274,6 +307,7 @@ function TodoRowContent({
   onStartEditTitle: () => void;
   onSaveEditTitle: () => void;
   onCancelEditTitle: () => void;
+  compact?: boolean;
 }) {
   const displayCategory =
     !todo.category ||
@@ -284,6 +318,108 @@ function TodoRowContent({
   const isWork = displayCategory.toLowerCase() === "work";
   const today = getTodayISO();
   const isOverdue = todo.due_date && todo.due_date < today;
+
+  // Next 뷰 등에서 사용하는 초슬림 콤팩트 모드
+  if (compact) {
+    return (
+      <>
+        {/* 좌측: 체크박스 + 제목 (여러 줄 허용, 자연스러운 줄바꿈) */}
+        <div className="flex items-start gap-2 flex-1 min-w-0">
+          <button
+            type="button"
+            onClick={() => onToggle(todo.id)}
+            className={`shrink-0 w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-300 ${
+              todo.is_done
+                ? isWork
+                  ? "bg-indigo-500 border-indigo-500 text-white"
+                  : "bg-emerald-500 border-emerald-500 text-white"
+                : "border-slate-300 hover:border-slate-400"
+            }`}
+          >
+            {todo.is_done && <Check className="w-2.5 h-2.5 stroke-[3]" />}
+          </button>
+          <div className="min-w-0 flex-1">
+            {isEditingTitle ? (
+              <input
+                type="text"
+                value={editTitle}
+                onChange={(e) => onEditTitleChange(e.target.value)}
+                onBlur={onSaveEditTitle}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    onSaveEditTitle();
+                  }
+                  if (e.key === "Escape") {
+                    e.preventDefault();
+                    onCancelEditTitle();
+                  }
+                }}
+                autoFocus
+                className="w-full min-w-0 bg-black/5 outline-none border-0 rounded-sm text-sm leading-snug px-1 py-0.5 text-slate-700 focus:ring-0 break-words whitespace-normal"
+                aria-label="제목 수정"
+              />
+            ) : (
+              <span
+                role="button"
+                tabIndex={0}
+                onClick={onStartEditTitle}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    onStartEditTitle();
+                  }
+                }}
+                className={`block break-words whitespace-normal text-sm cursor-text ${
+                  todo.is_done ? "line-through text-slate-400" : "text-slate-700"
+                }`}
+                title={todo.title}
+              >
+                {todo.title}
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* 우측: 마감일/카테고리/휴지통 (세로 정렬) */}
+        <div className="flex flex-col items-end justify-start gap-1.5 shrink-0 text-xs text-slate-500">
+          <span
+            className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 whitespace-nowrap ${
+              isOverdue ? "bg-red-50 text-red-700" : "bg-amber-50 text-amber-700"
+            }`}
+            title="마감일"
+          >
+            <Flag className="w-2.5 h-2.5" />
+            {todo.due_date ? (
+              <span>{formatShortDate(todo.due_date)} 마감</span>
+            ) : (
+              <span>마감일 설정</span>
+            )}
+          </span>
+          <span
+            className={`hidden sm:inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium capitalize ${
+              displayCategory.toLowerCase() === "work"
+                ? "bg-blue-100 text-blue-700"
+                : displayCategory.toLowerCase() === "life"
+                  ? "bg-green-100 text-green-700"
+                  : "bg-gray-100 text-gray-700"
+            }`}
+            title={displayCategory}
+          >
+            {displayCategory}
+          </span>
+          <button
+            type="button"
+            onClick={() => onRemove(todo.id)}
+            className="p-1.5 rounded-xl text-slate-300 hover:text-red-500 hover:bg-red-50 transition-colors"
+            aria-label="삭제"
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
+        </div>
+      </>
+    );
+  }
 
   return (
     <>
@@ -459,6 +595,7 @@ function SortableTodoRow({
   onStartEditTitle,
   onSaveEditTitle,
   onCancelEditTitle,
+  compact = false,
 }: {
   todo: Todo;
   onToggle: (id: string) => void;
@@ -471,6 +608,7 @@ function SortableTodoRow({
   onStartEditTitle: (id: string) => void;
   onSaveEditTitle: () => void;
   onCancelEditTitle: () => void;
+  compact?: boolean;
 }) {
   const {
     attributes,
@@ -492,11 +630,17 @@ function SortableTodoRow({
       style={style}
       {...attributes}
       {...listeners}
-      className={`group flex items-center gap-2.5 px-4 py-2.5 rounded-2xl bg-white border border-slate-200/80 shadow-sm hover:shadow-md transition-all duration-200 ease-out ${
-        isDragging
-          ? "scale-105 shadow-2xl z-50 ring-2 ring-blue-400 opacity-95 cursor-grabbing"
-          : "cursor-pointer"
-      }`}
+      className={
+        compact
+          ? `flex flex-row items-center justify-between w-full py-1.5 px-3 rounded-xl bg-white border border-slate-200/80 shadow-sm transition-all duration-200 ease-out ${
+              isDragging ? "opacity-30 cursor-grabbing" : "cursor-pointer"
+            }`
+          : `group flex items-center gap-2.5 px-4 py-2.5 rounded-2xl bg-white border border-slate-200/80 shadow-sm hover:shadow-md transition-all duration-200 ease-out ${
+              isDragging
+                ? "scale-105 shadow-2xl z-50 ring-2 ring-blue-400 opacity-95 cursor-grabbing"
+                : "cursor-pointer"
+            }`
+      }
     >
       <TodoRowContent
         todo={todo}
@@ -510,6 +654,7 @@ function SortableTodoRow({
         onStartEditTitle={() => onStartEditTitle(todo.id)}
         onSaveEditTitle={onSaveEditTitle}
         onCancelEditTitle={onCancelEditTitle}
+        compact={compact}
       />
     </li>
   );
@@ -560,7 +705,56 @@ function TodoRow({
   );
 }
 
-// ——— 동적 카테고리 탭 (+ 버튼으로 새 탭 추가, 커스텀 탭 X 삭제) ———
+// ——— Next 뷰: 날짜 컬럼(드롭 가능 영역)
+function DroppableDayColumn({
+  id,
+  isToday,
+  date,
+  weekdayLabel,
+  dayTodos,
+  children,
+}: {
+  id: string;
+  isToday: boolean;
+  date: Date;
+  weekdayLabel: string;
+  dayTodos: Todo[];
+  children: React.ReactNode;
+}) {
+  const { setNodeRef, isOver } = useDroppable({ id });
+  const { over } = useDndContext();
+  const isOverColumn =
+    isOver ||
+    (!!over && dayTodos.some((t) => String(t.id) === String(over.id)));
+  return (
+    <section
+      ref={setNodeRef}
+      className={`min-w-[280px] w-72 snap-center rounded-xl border p-4 flex flex-col transition-colors ${
+        isOverColumn
+          ? "bg-indigo-50/80 border-indigo-300 ring-2 ring-indigo-200"
+          : "bg-slate-50/60 border-slate-200/70"
+      }`}
+    >
+      <header className="flex items-baseline justify-between mb-2">
+        <div>
+          <p
+            className={`text-sm font-semibold ${
+              isToday ? "text-indigo-600" : "text-slate-800"
+            }`}
+          >
+            {formatMonthDay(date)} ({weekdayLabel})
+          </p>
+          <p className="mt-0.5 text-xs text-slate-500">
+            {isToday ? "오늘" : "실행 예정"}
+          </p>
+        </div>
+      </header>
+      {children}
+    </section>
+  );
+}
+
+// ——— 동적 카테고리 탭
 function CategoryTabs({
   categories,
   active,
@@ -685,6 +879,8 @@ export default function TodoApp() {
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [activeTodo, setActiveTodo] = useState<Todo | null>(null);
 
   // 정렬: 실행일 | 마감일 | 추가한 날짜 | 이름
   const [sortBy, setSortBy] = useState<SortBy>("execution_date");
@@ -720,6 +916,11 @@ export default function TodoApp() {
   const [todayInput, setTodayInput] = useState("");
   const [todayExecutionDate, setTodayExecutionDate] = useState(() => getTodayISO());
   const [todayDueDate, setTodayDueDate] = useState("");
+
+  // Next 뷰: 표시 일수(3|5|7), 주말/공휴일 제외 토글, 카테고리 탭
+  const [viewDays, setViewDays] = useState<3 | 5 | 7>(7);
+  const [excludeHolidays, setExcludeHolidays] = useState(false);
+  const [nextTab, setNextTab] = useState<string>("all");
 
   // 카테고리 목록 변경 시 선택 탭 유효성 (상단 탭만; 사이드바 Inbox는 미사용)
   useEffect(() => {
@@ -956,6 +1157,24 @@ export default function TodoApp() {
     await fetchTodos();
   };
 
+  const nextViewDays = useMemo(() => {
+    const base = new Date();
+    base.setHours(0, 0, 0, 0);
+    const result: { date: Date; iso: string }[] = [];
+    let d = new Date(base);
+    while (result.length < viewDays) {
+      const iso = toLocalDateString(d);
+      const skip =
+        excludeHolidays &&
+        (isWeekend(d) || HOLIDAYS_ISO.includes(iso));
+      if (!skip) {
+        result.push({ date: new Date(d), iso });
+      }
+      d.setDate(d.getDate() + 1);
+    }
+    return result;
+  }, [viewDays, excludeHolidays]);
+
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: { delay: 200, tolerance: 5 },
@@ -965,13 +1184,59 @@ export default function TodoApp() {
     })
   );
 
+  const handleDragStart = (event: DragStartEvent) => {
+    const id = String(event.active.id);
+    setActiveId(id);
+    const found = todos.find((t) => String(t.id) === id) ?? null;
+    setActiveTodo(found);
+  };
+
   const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event;
-    if (!over || active.id === over.id) return;
+    if (!over || active.id === over.id) {
+      setActiveId(null);
+      setActiveTodo(null);
+      return;
+    }
+
+    const overIdStr = String(over.id);
+    const isDateColumn = /^\d{4}-\d{2}-\d{2}$/.test(overIdStr);
+
+    // Next 뷰: 다른 날짜 컬럼(또는 해당 컬럼의 카드)에 드롭 → execution_date 변경
+    if (menu === "next") {
+      let targetDate: string | null = null;
+      if (isDateColumn) {
+        targetDate = overIdStr;
+      } else {
+        const overTodo = displaySortedTodos.find((t) => t.id === over.id);
+        if (overTodo?.execution_date) targetDate = overTodo.execution_date;
+      }
+      if (targetDate) {
+        const todo = displaySortedTodos.find((t) => t.id === active.id);
+        if (todo && todo.execution_date !== targetDate) {
+          const nextTodos = displaySortedTodos.map((t) =>
+            t.id === active.id ? { ...t, execution_date: targetDate! } : t
+          );
+          setTodos(nextTodos);
+          const { error } = await supabase
+            .from("todos")
+            .update({ execution_date: targetDate })
+            .eq("id", active.id);
+          if (error) {
+            console.error("todo execution_date update error:", error);
+            fetchTodos();
+          }
+          setActiveId(null);
+          setActiveTodo(null);
+          return;
+        }
+      }
+    }
 
     const tab =
       menu === "inbox" ? activeInboxTab : menu === "today" ? todayTab : "all";
-    const baseList = menu === "today" ? todayFilteredTodos : displaySortedTodos;
+    const baseList =
+      menu === "today" ? todayFilteredTodos : displaySortedTodos;
     const filtered = filterByCategory(baseList, tab);
     const oldIndex = filtered.findIndex((t) => t.id === active.id);
     const newIndex = filtered.findIndex((t) => t.id === over.id);
@@ -992,6 +1257,9 @@ export default function TodoApp() {
     }));
 
     setTodos(withNewOrder);
+
+    setActiveId(null);
+    setActiveTodo(null);
 
     await Promise.all(
       withNewOrder.map((t) =>
@@ -1163,7 +1431,12 @@ export default function TodoApp() {
                     placeholder="할 일 추가..."
                   />
                 </div>
-                <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
+                <DndContext
+                  sensors={sensors}
+                  onDragStart={handleDragStart}
+                  onDragEnd={handleDragEnd}
+                  modifiers={[restrictToVerticalAxis]}
+                >
                   <SortableContext
                     items={filterByCategory(displaySortedTodos, activeInboxTab).map((t) => t.id)}
                     strategy={verticalListSortingStrategy}
@@ -1268,7 +1541,12 @@ export default function TodoApp() {
                     </select>
                   </label>
                 </div>
-                <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
+                <DndContext
+                  sensors={sensors}
+                  onDragStart={handleDragStart}
+                  onDragEnd={handleDragEnd}
+                  modifiers={[restrictToVerticalAxis]}
+                >
                   <SortableContext
                     items={filterByCategory(todayFilteredTodos, todayTab).map((t) => t.id)}
                     strategy={verticalListSortingStrategy}
@@ -1346,7 +1624,7 @@ export default function TodoApp() {
                               return (
                                 <>
                                   {activeList.map((todo) => (
-                                    <TodoRow
+                                    <SortableTodoRow
                                       key={todo.id}
                                       todo={todo}
                                       onToggle={toggleTodo}
@@ -1418,13 +1696,159 @@ export default function TodoApp() {
               </>
             )}
 
-            {(menu === "next" || menu === "calendar") && (
+            {menu === "next" && (
+              <div className="flex-1 flex flex-col min-w-0">
+                <div className="mb-4 flex items-baseline justify-between gap-4 flex-wrap">
+                  <div>
+                    <h2 className="text-lg font-semibold text-slate-900">
+                      다가오는 {viewDays}일
+                    </h2>
+                    <p className="mt-1 text-xs text-slate-500">
+                      오늘부터 실행 예정 할 일을 한눈에 확인하세요.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-4 flex-wrap">
+                    <div className="flex items-center gap-1 p-1 rounded-xl bg-slate-100/80 border border-slate-200/80">
+                      {([3, 5, 7] as const).map((n) => (
+                        <button
+                          key={n}
+                          type="button"
+                          onClick={() => setViewDays(n)}
+                          className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:ring-offset-1 ${
+                            viewDays === n
+                              ? "bg-white text-indigo-700 shadow-sm border border-slate-200/80"
+                              : "text-slate-600 hover:bg-white/60 hover:text-slate-800"
+                          }`}
+                        >
+                          {n}일
+                        </button>
+                      ))}
+                    </div>
+                    <label className="flex items-center gap-2 cursor-pointer select-none">
+                      <span className="text-sm text-slate-600">주말/공휴일 제외</span>
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={excludeHolidays}
+                        onClick={() => setExcludeHolidays((v) => !v)}
+                        className={`relative inline-flex h-6 w-10 shrink-0 rounded-full border transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:ring-offset-2 ${
+                          excludeHolidays
+                            ? "bg-indigo-600 border-indigo-600"
+                            : "bg-slate-200 border-slate-300"
+                        }`}
+                      >
+                        <span
+                          className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-sm ring-0 transition-transform ${
+                            excludeHolidays ? "translate-x-4" : "translate-x-0.5"
+                          }`}
+                        />
+                      </button>
+                    </label>
+                  </div>
+                </div>
+                <div className="mb-3">
+                  <CategoryTabs
+                    categories={categories}
+                    active={nextTab}
+                    onSelect={setNextTab}
+                    onAddCategory={addCategory}
+                    onRemoveCategory={removeCategory}
+                    showAllOption
+                  />
+                </div>
+                <DndContext
+                  sensors={sensors}
+                  onDragStart={handleDragStart}
+                  onDragEnd={handleDragEnd}
+                  modifiers={[]}
+                >
+                  <div className="flex flex-row gap-4 pb-4 overflow-x-auto snap-x snap-mandatory next-timeline-scroll">
+                    {nextViewDays.map(({ date, iso }) => {
+                      const baseForNext = filterByCategory(displaySortedTodos, nextTab);
+                      const dayTodos = baseForNext.filter(
+                        (t) => t.execution_date === iso
+                      );
+                      const isToday = iso === getTodayISO();
+                      const weekdayLabel = WEEKDAY_KO[date.getDay()];
+                      return (
+                        <DroppableDayColumn
+                          key={iso}
+                          id={iso}
+                          isToday={isToday}
+                          date={date}
+                          weekdayLabel={weekdayLabel}
+                          dayTodos={dayTodos}
+                        >
+                          <SortableContext
+                            items={dayTodos.map((t) => t.id)}
+                            strategy={verticalListSortingStrategy}
+                          >
+                            <ul className="mt-3 space-y-2 flex-1 min-h-[80px]">
+                              {dayTodos.length === 0 ? (
+                                <li className="h-full flex items-center justify-center py-6">
+                                  <p className="text-sm text-slate-400 text-center">
+                                    예정된 할 일이 없습니다
+                                  </p>
+                                </li>
+                              ) : (
+                                dayTodos.map((todo) => (
+                                  <SortableTodoRow
+                                    key={todo.id}
+                                    todo={todo}
+                                    onToggle={toggleTodo}
+                                    onRemove={removeTodo}
+                                    onExecutionDateChange={updateTodoExecutionDate}
+                                    onDueDateChange={updateTodoDueDate}
+                                    editingTodoId={editingTodoId}
+                                    editTitle={editTitle}
+                                    onEditTitleChange={setEditTitle}
+                                    onStartEditTitle={handleStartEditTitle}
+                                    onSaveEditTitle={handleSaveEditTitle}
+                                    onCancelEditTitle={handleCancelEditTitle}
+                                    compact
+                                  />
+                                ))
+                              )}
+                            </ul>
+                          </SortableContext>
+                        </DroppableDayColumn>
+                      );
+                    })}
+                  </div>
+                  {menu === "next" && (
+                    <DragOverlay zIndex={9999}>
+                      {activeId && activeTodo && (
+                        <div className="flex flex-row items-center justify-between w-[260px] py-1.5 px-3 rounded-xl bg-white border border-slate-200/80 shadow-2xl scale-105 cursor-grabbing opacity-100">
+                          <TodoRowContent
+                            todo={activeTodo}
+                            onToggle={toggleTodo}
+                            onRemove={removeTodo}
+                            onExecutionDateChange={updateTodoExecutionDate}
+                            onDueDateChange={updateTodoDueDate}
+                            isEditingTitle={editingTodoId === activeTodo.id}
+                            editTitle={editTitle}
+                            onEditTitleChange={setEditTitle}
+                            onStartEditTitle={() => handleStartEditTitle(activeTodo.id)}
+                            onSaveEditTitle={handleSaveEditTitle}
+                            onCancelEditTitle={handleCancelEditTitle}
+                            compact={menu === "next"}
+                          />
+                        </div>
+                      )}
+                    </DragOverlay>
+                  )}
+                </DndContext>
+              </div>
+            )}
+
+            {menu === "calendar" && (
               <div className="flex-1 flex items-center justify-center py-16 text-slate-400 text-sm rounded-2xl bg-white/60 border border-dashed border-slate-200">
-                {menu === "next" ? "Next" : "Calendar"} 화면은 준비 중입니다.
+                Calendar 화면은 준비 중입니다.
               </div>
             )}
           </div>
         )}
+
       </main>
     </div>
   );
