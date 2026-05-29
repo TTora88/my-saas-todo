@@ -9,6 +9,7 @@ import {
   useSensor,
   useSensors,
   useDroppable,
+  useDraggable,
   useDndContext,
   DragOverlay,
   type DragStartEvent,
@@ -19,6 +20,7 @@ import {
   SortableContext,
   arrayMove,
   verticalListSortingStrategy,
+  horizontalListSortingStrategy,
   useSortable,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -97,6 +99,25 @@ function addDays(date: Date, days: number) {
   return d;
 }
 
+/** 월간 캘린더: 앞뒤 빈칸 + 해당 월 날짜 (7열 그리드용) */
+function buildCalendarMonthDays(year: number, month: number): (Date | null)[] {
+  const first = new Date(year, month, 1);
+  const lastDay = new Date(year, month + 1, 0).getDate();
+  const startPad = first.getDay();
+  const days: (Date | null)[] = [];
+  for (let i = 0; i < startPad; i++) days.push(null);
+  for (let d = 1; d <= lastDay; d++) days.push(new Date(year, month, d));
+  while (days.length % 7 !== 0) days.push(null);
+  return days;
+}
+
+function getMicroBarCategoryClass(category: string | null) {
+  const n = (category || "").trim().toLowerCase();
+  if (n === "work") return "bg-blue-100 text-blue-700";
+  if (n === "life") return "bg-green-100 text-green-700";
+  return "bg-slate-100 text-slate-600";
+}
+
 function formatMonthDay(date: Date) {
   return `${date.getMonth() + 1}/${date.getDate()}`;
 }
@@ -155,6 +176,24 @@ function formatShortDate(isoDate: string) {
   return `${parseInt(m!, 10)}.${parseInt(d!, 10)}`;
 }
 
+/** M.D(요일) — 예: 5.29(금), 5.2(토) */
+function formatHumanDate(isoDate: string) {
+  const [y, m, d] = isoDate.split("-").map(Number);
+  const date = new Date(y, m - 1, d);
+  const dayString = WEEKDAY_KO[date.getDay()];
+  return `${date.getMonth() + 1}.${date.getDate()}(${dayString})`;
+}
+
+// ——— 뷰 상단 제목 + 설명 헤더 (Next 탭과 동일 스타일) ———
+function ViewPageHeader({ title, description }: { title: string; description: string }) {
+  return (
+    <div className="mb-6">
+      <h2 className="text-lg font-semibold text-slate-900">{title}</h2>
+      <p className="mt-1 text-xs text-slate-500">{description}</p>
+    </div>
+  );
+}
+
 // ——— 입력창 + 실행일/마감일 (Dynamic Date Pickers) ———
 function TodoInput({
   value,
@@ -175,8 +214,10 @@ function TodoInput({
   onSubmit: () => void;
   placeholder?: string;
 }) {
-  const execInputRef = useRef<HTMLInputElement>(null);
-  const dueInputRef = useRef<HTMLInputElement>(null);
+  const doDisplayValue =
+    !executionDate || executionDate === getTodayISO()
+      ? "오늘"
+      : formatHumanDate(executionDate);
 
   const addTodo = () => {
     const trimmed = value.trim();
@@ -200,17 +241,22 @@ function TodoInput({
     }
   };
 
-  const openPicker = (ref: React.RefObject<HTMLInputElement | null>) => {
-    if (ref.current) {
-      if (typeof ref.current.showPicker === "function") ref.current.showPicker();
-      else ref.current.click();
+  const openDatePicker = (e: React.MouseEvent<HTMLButtonElement>) => {
+    const input = e.currentTarget.querySelector('input[type="date"]') as HTMLInputElement | null;
+    if (input) {
+      try {
+        if (typeof input.showPicker === "function") input.showPicker();
+        else input.focus();
+      } catch {
+        input.focus();
+      }
     }
   };
 
   return (
     <form
       onSubmit={handleSubmit}
-      className="flex flex-wrap gap-2 sm:gap-3 p-2 rounded-2xl bg-white border border-slate-200/80 shadow-lg shadow-slate-200/50 focus-within:ring-2 focus-within:ring-indigo-500/30 focus-within:border-indigo-300 transition-all"
+      className="flex flex-wrap items-end gap-2 sm:gap-3 p-2 rounded-2xl bg-white border border-slate-200/80 shadow-lg shadow-slate-200/50 focus-within:ring-2 focus-within:ring-indigo-500/30 focus-within:border-indigo-300 transition-all"
     >
       <input
         type="text"
@@ -218,58 +264,52 @@ function TodoInput({
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={handleKeyDown}
         placeholder={placeholder}
-        className="flex-1 min-w-[140px] px-5 py-3.5 rounded-xl bg-slate-50/80 text-slate-800 placeholder:text-slate-400 focus:outline-none border-0 text-base"
+        className="flex-1 min-w-[140px] px-5 py-4 rounded-xl bg-slate-50/80 text-slate-800 placeholder:text-slate-400 focus:outline-none border-0 text-base"
       />
-      {/* 실행일 */}
-      <div className="flex items-center shrink-0 min-w-[44px] overflow-hidden transition-all duration-300 rounded-xl border border-slate-200 bg-slate-50/80 focus-within:ring-2 focus-within:ring-indigo-500/30">
-        <button
-          type="button"
-          onClick={() => openPicker(execInputRef)}
-          className="relative flex items-center gap-2 py-3.5 pl-3 pr-3 text-slate-600 focus:outline-none text-left w-full"
+      <button
+        type="button"
+        onClick={openDatePicker}
+        className="relative flex flex-col items-center justify-center px-3 py-2 border border-slate-200 rounded-xl bg-slate-50/50 hover:bg-slate-100 transition-colors shrink-0"
+      >
+        <input
+          type="date"
+          value={executionDate}
+          onChange={(e) => onExecutionDateChange(e.target.value)}
+          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+          aria-label="실행일 선택"
+        />
+        <span className="flex items-center justify-center gap-1 w-full pointer-events-none">
+          <Play className="w-3.5 h-3.5 text-indigo-500 shrink-0 pointer-events-none" aria-hidden />
+          <span className="text-xs text-indigo-500 font-semibold pointer-events-none">Do</span>
+        </span>
+        <span className="text-sm text-slate-800 font-bold pointer-events-none mt-0.5 text-center w-full">
+          {doDisplayValue}
+        </span>
+      </button>
+      <button
+        type="button"
+        onClick={openDatePicker}
+        className="relative flex flex-col items-center justify-center px-3 py-2 border border-slate-200 rounded-xl bg-slate-50/50 hover:bg-slate-100 transition-colors shrink-0"
+      >
+        <input
+          type="date"
+          value={dueDate}
+          onChange={(e) => onDueDateChange(e.target.value)}
+          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+          aria-label="마감일 선택"
+        />
+        <span className="flex items-center justify-center gap-1 w-full pointer-events-none">
+          <Flag className="w-3.5 h-3.5 text-amber-500 shrink-0 pointer-events-none" aria-hidden />
+          <span className="text-xs text-amber-500 font-semibold pointer-events-none">Goal</span>
+        </span>
+        <span
+          className={`text-sm font-bold pointer-events-none mt-0.5 text-center w-full ${
+            dueDate ? "text-slate-800" : "text-slate-400"
+          }`}
         >
-          <input
-            ref={execInputRef}
-            type="date"
-            value={executionDate}
-            onChange={(e) => onExecutionDateChange(e.target.value)}
-            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-            aria-label="실행일 선택"
-          />
-          <Play className="w-4 h-4 text-indigo-500 shrink-0 pointer-events-none" aria-hidden />
-          <span
-            className={`whitespace-nowrap text-sm text-slate-700 pointer-events-none transition-all duration-300 ${
-              executionDate ? "max-w-[80px] opacity-100" : "max-w-0 overflow-hidden opacity-0"
-            }`}
-          >
-            {executionDate ? formatShortDate(executionDate) : ""}
-          </span>
-        </button>
-      </div>
-      {/* 마감일 */}
-      <div className="flex items-center shrink-0 min-w-[44px] overflow-hidden transition-all duration-300 rounded-xl border border-slate-200 bg-slate-50/80 focus-within:ring-2 focus-within:ring-indigo-500/30">
-        <button
-          type="button"
-          onClick={() => openPicker(dueInputRef)}
-          className="relative flex items-center gap-2 py-3.5 pl-3 pr-3 text-slate-600 focus:outline-none text-left w-full"
-        >
-          <input
-            ref={dueInputRef}
-            type="date"
-            value={dueDate}
-            onChange={(e) => onDueDateChange(e.target.value)}
-            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-            aria-label="마감일 선택"
-          />
-          <Flag className="w-4 h-4 text-amber-500 shrink-0 pointer-events-none" aria-hidden />
-          <span
-            className={`whitespace-nowrap text-sm text-slate-700 pointer-events-none transition-all duration-300 ${
-              dueDate ? "max-w-[80px] opacity-100" : "max-w-0 overflow-hidden opacity-0"
-            }`}
-          >
-            {dueDate ? formatShortDate(dueDate) : ""}
-          </span>
-        </button>
-      </div>
+          {dueDate ? formatHumanDate(dueDate) : "None"}
+        </span>
+      </button>
       <button
         type="submit"
         className="shrink-0 flex items-center gap-2 px-5 py-3.5 rounded-xl font-semibold text-white bg-indigo-600 hover:bg-indigo-500 shadow-md transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
@@ -278,6 +318,146 @@ function TodoInput({
         <span>추가</span>
       </button>
     </form>
+  );
+}
+
+// ——— 할 일 종합 수정 모달 ———
+function TodoEditModal({
+  editTitle,
+  onEditTitleChange,
+  editExecutionDate,
+  onEditExecutionDateChange,
+  editDueDate,
+  onEditDueDateChange,
+  onSave,
+  onCancel,
+}: {
+  editTitle: string;
+  onEditTitleChange: (v: string) => void;
+  editExecutionDate: string;
+  onEditExecutionDateChange: (v: string) => void;
+  editDueDate: string;
+  onEditDueDateChange: (v: string) => void;
+  onSave: () => void;
+  onCancel: () => void;
+}) {
+  const doDisplayDate =
+    !editExecutionDate || editExecutionDate === getTodayISO()
+      ? "오늘"
+      : formatHumanDate(editExecutionDate);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    onSave();
+  };
+
+  const handleTitleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter" && !e.nativeEvent.isComposing) {
+      e.preventDefault();
+      onSave();
+    }
+  };
+
+  const handleBackdropClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    e.stopPropagation();
+    onCancel();
+  };
+
+  const openDatePicker = (e: React.MouseEvent<HTMLButtonElement>) => {
+    const input = e.currentTarget.querySelector('input[type="date"]') as HTMLInputElement | null;
+    if (input) {
+      try {
+        if (typeof input.showPicker === "function") input.showPicker();
+        else input.focus();
+      } catch {
+        input.focus();
+      }
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-200"
+      onClick={handleBackdropClick}
+      role="presentation"
+    >
+      <div
+        className="bg-white rounded-2xl shadow-2xl p-5 w-full max-w-lg mx-4"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label="할 일 수정"
+      >
+        <form
+          onSubmit={handleSubmit}
+          className="flex flex-col gap-3 p-2 rounded-2xl bg-white border border-slate-200/80 shadow-lg shadow-slate-200/50 focus-within:ring-2 focus-within:ring-indigo-500/30 focus-within:border-indigo-300 transition-all"
+        >
+          <input
+            type="text"
+            value={editTitle}
+            onChange={(e) => onEditTitleChange(e.target.value)}
+            onKeyDown={handleTitleKeyDown}
+            placeholder="할 일 제목..."
+            autoFocus
+            className="w-full px-5 py-3.5 rounded-xl bg-slate-50/80 text-slate-800 placeholder:text-slate-400 focus:outline-none border-0 text-base"
+            aria-label="제목 수정"
+          />
+          <div className="flex items-end gap-3 w-full">
+            <button
+              type="button"
+              onClick={openDatePicker}
+              className="relative flex flex-col items-center justify-center px-3 py-2 border border-slate-200 rounded-xl bg-slate-50/50 hover:bg-slate-100 transition-colors shrink-0"
+            >
+              <input
+                type="date"
+                value={editExecutionDate}
+                onChange={(e) => onEditExecutionDateChange(e.target.value)}
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                aria-label="실행일 선택"
+              />
+              <span className="flex items-center justify-center gap-1 w-full pointer-events-none">
+                <Play className="w-3.5 h-3.5 text-indigo-500 shrink-0 pointer-events-none" aria-hidden />
+                <span className="text-xs text-indigo-500 font-semibold pointer-events-none">Do</span>
+              </span>
+              <span className="text-sm text-slate-800 font-bold pointer-events-none mt-0.5 text-center w-full">
+                {doDisplayDate}
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={openDatePicker}
+              className="relative flex flex-col items-center justify-center px-3 py-2 border border-slate-200 rounded-xl bg-slate-50/50 hover:bg-slate-100 transition-colors shrink-0"
+            >
+              <input
+                type="date"
+                value={editDueDate}
+                onChange={(e) => onEditDueDateChange(e.target.value)}
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                aria-label="마감일 선택"
+              />
+              <span className="flex items-center justify-center gap-1 w-full pointer-events-none">
+                <Flag className="w-3.5 h-3.5 text-amber-500 shrink-0 pointer-events-none" aria-hidden />
+                <span className="text-xs text-amber-500 font-semibold pointer-events-none">Goal</span>
+              </span>
+              <span
+                className={`text-sm font-bold pointer-events-none mt-0.5 text-center w-full ${
+                  editDueDate ? "text-slate-800" : "text-slate-400"
+                }`}
+              >
+                {editDueDate ? formatHumanDate(editDueDate) : "None"}
+              </span>
+            </button>
+            <button
+              type="submit"
+              className="shrink-0 ml-auto flex items-center gap-2 px-5 py-3.5 rounded-xl font-semibold text-white bg-indigo-600 hover:bg-indigo-500 shadow-md transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+            >
+              <Check className="w-5 h-5" />
+              <span>수정</span>
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
   );
 }
 
@@ -309,6 +489,48 @@ function TodoRowContent({
   onCancelEditTitle: () => void;
   compact?: boolean;
 }) {
+  const [editExecutionDate, setEditExecutionDate] = useState(todo.execution_date ?? "");
+  const [editDueDate, setEditDueDate] = useState(todo.due_date ?? "");
+
+  useEffect(() => {
+    if (isEditingTitle) {
+      setEditExecutionDate(todo.execution_date ?? "");
+      setEditDueDate(todo.due_date ?? "");
+    }
+  }, [isEditingTitle, todo.execution_date, todo.due_date]);
+
+  useEffect(() => {
+    if (!isEditingTitle) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onCancelEditTitle();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [isEditingTitle, onCancelEditTitle]);
+
+  const handleModalSave = async () => {
+    if (!editTitle.trim()) return;
+    await onSaveEditTitle();
+    await onExecutionDateChange(todo.id, editExecutionDate || null);
+    await onDueDateChange(todo.id, editDueDate || null);
+  };
+
+  const editModal = isEditingTitle ? (
+    <TodoEditModal
+      editTitle={editTitle}
+      onEditTitleChange={onEditTitleChange}
+      editExecutionDate={editExecutionDate}
+      onEditExecutionDateChange={setEditExecutionDate}
+      editDueDate={editDueDate}
+      onEditDueDateChange={setEditDueDate}
+      onSave={handleModalSave}
+      onCancel={onCancelEditTitle}
+    />
+  ) : null;
+
   const displayCategory =
     !todo.category ||
     !todo.category.trim() ||
@@ -327,7 +549,10 @@ function TodoRowContent({
         <div className="flex items-start gap-2 flex-1 min-w-0">
           <button
             type="button"
-            onClick={() => onToggle(todo.id)}
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggle(todo.id);
+            }}
             className={`shrink-0 w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-300 ${
               todo.is_done
                 ? isWork
@@ -339,45 +564,14 @@ function TodoRowContent({
             {todo.is_done && <Check className="w-2.5 h-2.5 stroke-[3]" />}
           </button>
           <div className="min-w-0 flex-1">
-            {isEditingTitle ? (
-              <input
-                type="text"
-                value={editTitle}
-                onChange={(e) => onEditTitleChange(e.target.value)}
-                onBlur={onSaveEditTitle}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    onSaveEditTitle();
-                  }
-                  if (e.key === "Escape") {
-                    e.preventDefault();
-                    onCancelEditTitle();
-                  }
-                }}
-                autoFocus
-                className="w-full min-w-0 bg-black/5 outline-none border-0 rounded-sm text-sm leading-snug px-1 py-0.5 text-slate-700 focus:ring-0 break-words whitespace-normal"
-                aria-label="제목 수정"
-              />
-            ) : (
-              <span
-                role="button"
-                tabIndex={0}
-                onClick={onStartEditTitle}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    onStartEditTitle();
-                  }
-                }}
-                className={`block break-words whitespace-normal text-sm cursor-text ${
-                  todo.is_done ? "line-through text-slate-400" : "text-slate-700"
-                }`}
-                title={todo.title}
-              >
-                {todo.title}
-              </span>
-            )}
+            <span
+              className={`block break-words whitespace-normal text-sm select-none ${
+                todo.is_done ? "line-through text-slate-400" : "text-slate-700"
+              }`}
+              title={todo.title}
+            >
+              {todo.title}
+            </span>
           </div>
         </div>
 
@@ -410,13 +604,17 @@ function TodoRowContent({
           </span>
           <button
             type="button"
-            onClick={() => onRemove(todo.id)}
+            onClick={(e) => {
+              e.stopPropagation();
+              onRemove(todo.id);
+            }}
             className="p-1.5 rounded-xl text-slate-300 hover:text-red-500 hover:bg-red-50 transition-colors"
             aria-label="삭제"
           >
             <Trash2 className="w-4 h-4" />
           </button>
         </div>
+        {editModal}
       </>
     );
   }
@@ -425,7 +623,10 @@ function TodoRowContent({
     <>
       <button
         type="button"
-        onClick={() => onToggle(todo.id)}
+        onClick={(e) => {
+          e.stopPropagation();
+          onToggle(todo.id);
+        }}
         className={`shrink-0 w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-300 ${
           todo.is_done
             ? isWork
@@ -437,124 +638,33 @@ function TodoRowContent({
         {todo.is_done && <Check className="w-3.5 h-3.5 stroke-[3]" />}
       </button>
       <span className="flex-1 min-w-0 flex flex-col gap-1">
-        {isEditingTitle ? (
-          <input
-            type="text"
-            value={editTitle}
-            onChange={(e) => onEditTitleChange(e.target.value)}
-            onBlur={onSaveEditTitle}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                onSaveEditTitle();
-              }
-              if (e.key === "Escape") {
-                e.preventDefault();
-                onCancelEditTitle();
-              }
-            }}
-            autoFocus
-            className="w-full min-w-0 bg-black/10 outline-none border-0 rounded-md break-words text-inherit px-1.5 py-0.5 text-slate-700 focus:ring-0 transition-colors duration-200"
-            aria-label="제목 수정"
-          />
-        ) : (
+        <span
+          className={`break-words text-sm select-none transition-colors duration-200 ${
+            todo.is_done ? "line-through text-slate-400" : "text-slate-700"
+          }`}
+        >
+          {todo.title}
+        </span>
+        <span className="flex items-center gap-2 flex-wrap">
+          <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 whitespace-nowrap">
+            <Play className="w-3 h-3 text-indigo-500 shrink-0" />
+            {todo.execution_date ? (
+              <span>{formatShortDate(todo.execution_date)} 실행</span>
+            ) : (
+              <span>실행일 설정</span>
+            )}
+          </span>
           <span
-            role="button"
-            tabIndex={0}
-            onClick={onStartEditTitle}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                onStartEditTitle();
-              }
-            }}
-            className={`break-words transition-colors duration-200 cursor-text hover:bg-slate-50/80 rounded px-0.5 -mx-0.5 ${
-              todo.is_done ? "line-through text-slate-400" : "text-slate-700"
+            className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-md whitespace-nowrap ${
+              isOverdue ? "bg-red-50 text-red-700" : "bg-amber-50 text-amber-700"
             }`}
           >
-            {todo.title}
-          </span>
-        )}
-        <span className="flex items-center gap-2 flex-wrap">
-          {/* 실행일 뱃지: 클릭 시 showPicker()로 달력 강제 오픈 */}
-          <span
-            className="relative inline-block cursor-pointer"
-            onClick={(e) => {
-              const el = e.currentTarget.querySelector('input[type="date"]') as HTMLInputElement | null;
-              if (el) {
-                try {
-                  if (typeof el.showPicker === "function") el.showPicker();
-                  else el.focus();
-                } catch {
-                  el.focus();
-                }
-              }
-            }}
-            role="button"
-            aria-label="실행일 선택"
-            title="실행일 변경"
-          >
-            <span
-              className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 whitespace-nowrap"
-              aria-hidden
-            >
-              <Play className="w-3 h-3 text-indigo-500 shrink-0" />
-              {todo.execution_date ? (
-                <span>{formatShortDate(todo.execution_date)} 실행</span>
-              ) : (
-                <span>실행일 설정</span>
-              )}
-            </span>
-            <input
-              type="date"
-              value={todo.execution_date ?? ""}
-              onChange={(e) => onExecutionDateChange(todo.id, e.target.value || null)}
-              className="opacity-0 absolute w-0 h-0 overflow-hidden -z-10 pointer-events-none"
-              aria-hidden
-              tabIndex={-1}
-            />
-          </span>
-          {/* 마감일 뱃지: 클릭 시 showPicker()로 달력 강제 오픈 */}
-          <span
-            className="relative inline-block cursor-pointer"
-            onClick={(e) => {
-              const el = e.currentTarget.querySelector('input[type="date"]') as HTMLInputElement | null;
-              if (el) {
-                try {
-                  if (typeof el.showPicker === "function") el.showPicker();
-                  else el.focus();
-                } catch {
-                  el.focus();
-                }
-              }
-            }}
-            role="button"
-            aria-label="마감일 선택"
-            title="마감일 변경"
-          >
-            <span
-              className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-md whitespace-nowrap ${
-                isOverdue
-                  ? "bg-red-50 text-red-700"
-                  : "bg-amber-50 text-amber-700"
-              }`}
-              aria-hidden
-            >
-              <Flag className="w-3 h-3 shrink-0" />
-              {todo.due_date ? (
-                <span>{formatShortDate(todo.due_date)} 마감</span>
-              ) : (
-                <span>마감일 설정</span>
-              )}
-            </span>
-            <input
-              type="date"
-              value={todo.due_date ?? ""}
-              onChange={(e) => onDueDateChange(todo.id, e.target.value || null)}
-              className="opacity-0 absolute w-0 h-0 overflow-hidden -z-10 pointer-events-none"
-              aria-hidden
-              tabIndex={-1}
-            />
+            <Flag className="w-3 h-3 shrink-0" />
+            {todo.due_date ? (
+              <span>{formatShortDate(todo.due_date)} 마감</span>
+            ) : (
+              <span>마감일 설정</span>
+            )}
           </span>
         </span>
       </span>
@@ -572,12 +682,16 @@ function TodoRowContent({
       </span>
       <button
         type="button"
-        onClick={() => onRemove(todo.id)}
+        onClick={(e) => {
+          e.stopPropagation();
+          onRemove(todo.id);
+        }}
         className="shrink-0 p-1.5 rounded-xl text-slate-300 hover:text-red-600 hover:bg-red-50 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-red-200"
         aria-label="삭제"
       >
         <Trash2 className="w-4 h-4" />
       </button>
+      {editModal}
     </>
   );
 }
@@ -630,6 +744,10 @@ function SortableTodoRow({
       style={style}
       {...attributes}
       {...listeners}
+      onClick={() => {
+        if (editingTodoId === todo.id) return;
+        onStartEditTitle(todo.id);
+      }}
       className={
         compact
           ? `flex flex-row items-center justify-between w-full py-1.5 px-3 rounded-xl bg-white border border-slate-200/80 shadow-sm transition-all duration-200 ease-out ${
@@ -687,7 +805,13 @@ function TodoRow({
   onCancelEditTitle: () => void;
 }) {
   return (
-    <li className="group flex items-center gap-2.5 px-4 py-2.5 rounded-2xl bg-white border border-slate-200/80 shadow-sm hover:shadow-md transition-all duration-200 ease-out">
+    <li
+      onClick={() => {
+        if (editingTodoId === todo.id) return;
+        onStartEditTitle(todo.id);
+      }}
+      className="group flex items-center gap-2.5 px-4 py-2.5 rounded-2xl bg-white border border-slate-200/80 shadow-sm hover:shadow-md transition-all duration-200 ease-out cursor-pointer"
+    >
       <TodoRowContent
         todo={todo}
         onToggle={onToggle}
@@ -754,13 +878,156 @@ function DroppableDayColumn({
   );
 }
 
-// ——— 동적 카테고리 탭
+// ——— Calendar 뷰: 날짜 셀(드롭존)
+function DroppableCalendarDayCell({
+  id,
+  date,
+  dayTodos,
+  children,
+}: {
+  id: string;
+  date: Date;
+  dayTodos: Todo[];
+  children: React.ReactNode;
+}) {
+  const { setNodeRef, isOver } = useDroppable({ id });
+  const { over } = useDndContext();
+  const isOverCell =
+    isOver ||
+    (!!over && dayTodos.some((t) => String(t.id) === String(over.id)));
+  const isoToday = getTodayISO();
+  const iso = toLocalDateString(date);
+  const isToday = iso === isoToday;
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={`bg-white min-h-[100px] p-1.5 flex flex-col transition-colors ${
+        isOverCell ? "bg-indigo-50/90 ring-1 ring-inset ring-indigo-300" : ""
+      }`}
+    >
+      <span
+        className={`text-xs font-medium mb-1 ${
+          isToday
+            ? "inline-flex h-6 w-6 items-center justify-center rounded-full bg-indigo-600 text-white"
+            : "text-slate-600"
+        }`}
+      >
+        {date.getDate()}
+      </span>
+      <div className="flex-1 min-h-0 space-y-0">{children}</div>
+    </div>
+  );
+}
+
+// ——— Calendar 뷰: 할 일 마이크로 바(드래그 가능)
+function DraggableMicroTodoBar({ todo }: { todo: Todo }) {
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+    id: todo.id,
+  });
+  const style = transform
+    ? { transform: CSS.Translate.toString(transform) }
+    : undefined;
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      {...listeners}
+      {...attributes}
+      className={`text-[10px] px-1.5 py-0.5 rounded-sm truncate w-full mb-0.5 cursor-grab active:cursor-grabbing touch-none ${getMicroBarCategoryClass(
+        todo.category
+      )} ${isDragging ? "opacity-40" : ""}`}
+      title={todo.title}
+    >
+      {todo.title}
+    </div>
+  );
+}
+
+function categorySortableId(name: string) {
+  return `category:${name}`;
+}
+
+// ——— 카테고리 탭: 드래그 가능한 개별 항목
+function SortableCategoryTab({
+  cat,
+  active,
+  onSelect,
+  onRemoveCategory,
+}: {
+  cat: string;
+  active: string;
+  onSelect: (id: string) => void;
+  onRemoveCategory?: (name: string) => void;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: categorySortableId(cat) });
+
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
+
+  const getTabActiveClass = (c: string) => {
+    if (active !== c) return "bg-gray-100 text-gray-600 hover:bg-white/70 hover:text-gray-800";
+    return "bg-white text-black shadow-sm border border-slate-200/80";
+  };
+
+  const getTabIconColorClass = (c: string) => {
+    if (c === "Work") return "text-blue-500";
+    if (c === "Life") return "text-green-500";
+    return "text-gray-500";
+  };
+
+  return (
+    <span
+      ref={setNodeRef}
+      style={style}
+      className={`inline-flex items-center gap-0.5 touch-none ${isDragging ? "opacity-60 z-10" : ""}`}
+      {...attributes}
+      {...listeners}
+    >
+      <button
+        type="button"
+        onClick={() => onSelect(cat)}
+        className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-slate-300 focus:ring-offset-1 cursor-grab active:cursor-grabbing ${getTabActiveClass(cat)}`}
+      >
+        <span className={getTabIconColorClass(cat)}>{getCategoryIcon(cat)}</span>
+        {cat}
+      </button>
+      {onRemoveCategory && cat !== "Work" && cat !== "Life" && (
+        <button
+          type="button"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (confirm("이 카테고리를 삭제하시겠습니까?")) onRemoveCategory(cat);
+          }}
+          className="p-1 rounded text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors focus:outline-none focus:ring-2 focus:ring-red-200"
+          aria-label={`${cat} 카테고리 삭제`}
+        >
+          <X size={14} />
+        </button>
+      )}
+    </span>
+  );
+}
+
+// ——— 동적 카테고리 탭 (커스텀 카테고리 DnD + All/+ 고정)
 function CategoryTabs({
   categories,
   active,
   onSelect,
   onAddCategory,
   onRemoveCategory,
+  onReorderCategories,
   showAllOption = false,
 }: {
   categories: string[];
@@ -768,10 +1035,20 @@ function CategoryTabs({
   onSelect: (id: string) => void;
   onAddCategory: (name: string) => void;
   onRemoveCategory?: (name: string) => void;
+  onReorderCategories: (ordered: string[]) => void;
   showAllOption?: boolean;
 }) {
   const [isAdding, setIsAdding] = useState(false);
   const [newName, setNewName] = useState("");
+
+  const categorySensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 8 },
+    }),
+    useSensor(TouchSensor, {
+      activationConstraint: { delay: 250, tolerance: 5 },
+    })
+  );
 
   const handleAdd = () => {
     const trimmed = newName.trim();
@@ -785,89 +1062,82 @@ function CategoryTabs({
     }
   };
 
-  const getTabActiveClass = (cat: string) => {
-    if (active !== cat) return "bg-gray-100 text-gray-600 hover:bg-white/70 hover:text-gray-800";
-    return "bg-white text-black shadow-sm border border-slate-200/80";
+  const handleCategoryDragEnd = (event: DragEndEvent) => {
+    const { active: dragActive, over } = event;
+    if (!over || dragActive.id === over.id) return;
+    const oldIndex = categories.findIndex((c) => categorySortableId(c) === String(dragActive.id));
+    const newIndex = categories.findIndex((c) => categorySortableId(c) === String(over.id));
+    if (oldIndex === -1 || newIndex === -1) return;
+    onReorderCategories(arrayMove(categories, oldIndex, newIndex));
   };
 
-  const getTabIconColorClass = (cat: string) => {
-    if (cat === "Work") return "text-blue-500";
-    if (cat === "Life") return "text-green-500";
-    return "text-gray-500";
-  };
+  const sortableIds = categories.map(categorySortableId);
 
   return (
-    <div className="flex flex-wrap items-center gap-1 p-1 rounded-lg bg-slate-100/80 border border-slate-200/80 w-fit">
-      {showAllOption && (
-        <button
-          type="button"
-          onClick={() => onSelect("all")}
-          className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-slate-300 focus:ring-offset-1 ${
-            active === "all"
-              ? "bg-white text-black shadow-sm border border-slate-200/80"
-              : "bg-gray-100 text-gray-600 hover:bg-white/70 hover:text-gray-800"
-          }`}
-        >
-          <ListTodo className="w-4 h-4 text-slate-500" />
-          All
-        </button>
-      )}
-      {categories.map((cat) => (
-        <span key={cat} className="inline-flex items-center gap-0.5">
+    <div className="flex flex-wrap items-center gap-1 p-1 rounded-lg bg-slate-100/80 border border-slate-200/80 w-fit max-w-full">
+      <DndContext sensors={categorySensors} onDragEnd={handleCategoryDragEnd}>
+        <SortableContext items={sortableIds} strategy={horizontalListSortingStrategy}>
+          <div className="flex flex-wrap items-center gap-1">
+            {categories.map((cat) => (
+              <SortableCategoryTab
+                key={cat}
+                cat={cat}
+                active={active}
+                onSelect={onSelect}
+                onRemoveCategory={onRemoveCategory}
+              />
+            ))}
+          </div>
+        </SortableContext>
+      </DndContext>
+
+      <div className="flex items-center gap-1 shrink-0 ml-auto">
+        {showAllOption && (
           <button
             type="button"
-            onClick={() => onSelect(cat)}
-            className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-slate-300 focus:ring-offset-1 ${getTabActiveClass(cat)}`}
+            onClick={() => onSelect("all")}
+            className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-slate-300 focus:ring-offset-1 ${
+              active === "all"
+                ? "bg-white text-black shadow-sm border border-slate-200/80"
+                : "bg-gray-100 text-gray-600 hover:bg-white/70 hover:text-gray-800"
+            }`}
           >
-            <span className={getTabIconColorClass(cat)}>{getCategoryIcon(cat)}</span>
-            {cat}
+            <ListTodo className="w-4 h-4 text-slate-500" />
+            All
           </button>
-          {onRemoveCategory && cat !== "Work" && cat !== "Life" && (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                if (confirm("이 카테고리를 삭제하시겠습니까?")) onRemoveCategory(cat);
+        )}
+        {isAdding ? (
+          <span className="flex items-center gap-1 px-2 py-1 rounded-md bg-white border border-slate-200/80 shadow-sm">
+            <input
+              type="text"
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  handleAdd();
+                }
+                if (e.key === "Escape") {
+                  setNewName("");
+                  setIsAdding(false);
+                }
               }}
-              className="p-1 rounded text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors focus:outline-none focus:ring-2 focus:ring-red-200"
-              aria-label={`${cat} 카테고리 삭제`}
-            >
-              <X size={14} />
-            </button>
-          )}
-        </span>
-      ))}
-      {isAdding ? (
-        <span className="flex items-center gap-1 px-2 py-1 rounded-md bg-white border border-slate-200/80 shadow-sm">
-          <input
-            type="text"
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                handleAdd();
-              }
-              if (e.key === "Escape") {
-                setNewName("");
-                setIsAdding(false);
-              }
-            }}
-            placeholder="카테고리 이름"
-            className="w-24 min-w-0 px-2 py-1 text-sm rounded border-0 outline-none focus:ring-0 bg-transparent"
-            autoFocus
-          />
-        </span>
-      ) : (
-        <button
-          type="button"
-          onClick={() => setIsAdding(true)}
-          className="flex items-center justify-center w-8 h-8 rounded-md text-slate-500 hover:text-indigo-600 hover:bg-white/80 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-300"
-          aria-label="카테고리 추가"
-        >
-          <Plus className="w-4 h-4" />
-        </button>
-      )}
+              placeholder="카테고리 이름"
+              className="w-24 min-w-0 px-2 py-1 text-sm rounded border-0 outline-none focus:ring-0 bg-transparent"
+              autoFocus
+            />
+          </span>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setIsAdding(true)}
+            className="flex items-center justify-center w-8 h-8 rounded-md text-slate-500 hover:text-indigo-600 hover:bg-white/80 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-300"
+            aria-label="카테고리 추가"
+          >
+            <Plus className="w-4 h-4" />
+          </button>
+        )}
+      </div>
     </div>
   );
 }
@@ -901,12 +1171,14 @@ export default function TodoApp() {
 
   const removeCategory = (name: string) => {
     setCategories((prev) => prev.filter((c) => c !== name));
-    if (activeInboxTab === name) setActiveInboxTab("Work");
+    if (activeInboxTab === name) setActiveInboxTab("all");
     if (todayTab === name) setTodayTab("all");
+    if (nextTab === name) setNextTab("all");
+    if (calendarTab === name) setCalendarTab("all");
   };
 
-  // Inbox 화면: 상단 탭 = Work, Life, ... (Inbox 탭 없음), 기본 선택 Work
-  const [activeInboxTab, setActiveInboxTab] = useState<string>("Work");
+  // Inbox 화면: 카테고리 필터 (Today와 동일 — All 기본)
+  const [activeInboxTab, setActiveInboxTab] = useState<string>("all");
   const [inboxInput, setInboxInput] = useState("");
   const [inboxExecutionDate, setInboxExecutionDate] = useState(() => getTodayISO());
   const [inboxDueDate, setInboxDueDate] = useState("");
@@ -922,13 +1194,31 @@ export default function TodoApp() {
   const [excludeHolidays, setExcludeHolidays] = useState(false);
   const [nextTab, setNextTab] = useState<string>("all");
 
-  // 카테고리 목록 변경 시 선택 탭 유효성 (상단 탭만; 사이드바 Inbox는 미사용)
+  const [calendarTab, setCalendarTab] = useState<string>("all");
+
+  const [calendarDate, setCalendarDate] = useState(() => new Date());
+
+  // 카테고리 목록 변경 시 선택 탭 유효성
   useEffect(() => {
-    if (categories.length && !categories.includes(activeInboxTab)) setActiveInboxTab("Work");
+    if (
+      activeInboxTab !== "all" &&
+      categories.length &&
+      !categories.includes(activeInboxTab)
+    ) {
+      setActiveInboxTab("all");
+    }
   }, [categories, activeInboxTab]);
   useEffect(() => {
     if (todayTab !== "all" && categories.length && !categories.includes(todayTab)) setTodayTab("all");
   }, [categories, todayTab]);
+  useEffect(() => {
+    if (nextTab !== "all" && categories.length && !categories.includes(nextTab)) setNextTab("all");
+  }, [categories, nextTab]);
+  useEffect(() => {
+    if (calendarTab !== "all" && categories.length && !categories.includes(calendarTab)) {
+      setCalendarTab("all");
+    }
+  }, [categories, calendarTab]);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -1132,6 +1422,11 @@ export default function TodoApp() {
     );
   }, [displaySortedTodos]);
 
+  const calendarFilteredTodos = useMemo(
+    () => filterByCategory(displaySortedTodos, calendarTab),
+    [displaySortedTodos, calendarTab]
+  );
+
   const handleMoveOverdueToToday = async () => {
     const overdue = filterByCategory(todayOverdueTodos, todayTab);
     if (overdue.length === 0) return;
@@ -1175,12 +1470,18 @@ export default function TodoApp() {
     return result;
   }, [viewDays, excludeHolidays]);
 
+  const calendarMonthDays = useMemo(() => {
+    const year = calendarDate.getFullYear();
+    const month = calendarDate.getMonth();
+    return buildCalendarMonthDays(year, month);
+  }, [calendarDate]);
+
   const sensors = useSensors(
     useSensor(PointerSensor, {
-      activationConstraint: { delay: 200, tolerance: 5 },
+      activationConstraint: { distance: 8 },
     }),
     useSensor(TouchSensor, {
-      activationConstraint: { delay: 200, tolerance: 5 },
+      activationConstraint: { delay: 250, tolerance: 5 },
     })
   );
 
@@ -1202,8 +1503,8 @@ export default function TodoApp() {
     const overIdStr = String(over.id);
     const isDateColumn = /^\d{4}-\d{2}-\d{2}$/.test(overIdStr);
 
-    // Next 뷰: 다른 날짜 컬럼(또는 해당 컬럼의 카드)에 드롭 → execution_date 변경
-    if (menu === "next") {
+    // Next / Calendar 뷰: 날짜 셀(또는 해당 날짜의 카드)에 드롭 → execution_date 변경
+    if (menu === "next" || menu === "calendar") {
       let targetDate: string | null = null;
       if (isDateColumn) {
         targetDate = overIdStr;
@@ -1234,7 +1535,15 @@ export default function TodoApp() {
     }
 
     const tab =
-      menu === "inbox" ? activeInboxTab : menu === "today" ? todayTab : "all";
+      menu === "inbox"
+        ? activeInboxTab
+        : menu === "today"
+          ? todayTab
+          : menu === "next"
+            ? nextTab
+            : menu === "calendar"
+              ? calendarTab
+              : "all";
     const baseList =
       menu === "today" ? todayFilteredTodos : displaySortedTodos;
     const filtered = filterByCategory(baseList, tab);
@@ -1390,6 +1699,10 @@ export default function TodoApp() {
             )}
             {menu === "inbox" && (
               <>
+                <ViewPageHeader
+                  title="Inbox"
+                  description="아직 날짜가 지정되지 않은 모든 아이디어와 할 일의 대기소입니다."
+                />
                 <div className="mb-6">
                   <CategoryTabs
                     categories={categories}
@@ -1397,6 +1710,8 @@ export default function TodoApp() {
                     onSelect={setActiveInboxTab}
                     onAddCategory={addCategory}
                     onRemoveCategory={removeCategory}
+                    onReorderCategories={setCategories}
+                    showAllOption
                   />
                 </div>
                 <div className="mb-2 flex justify-end">
@@ -1423,7 +1738,8 @@ export default function TodoApp() {
                     dueDate={inboxDueDate}
                     onDueDateChange={setInboxDueDate}
                     onSubmit={() => {
-                      addTodo(inboxInput.trim(), activeInboxTab, inboxExecutionDate || null, inboxDueDate || null);
+                      const category = activeInboxTab === "all" ? "Work" : activeInboxTab;
+                      addTodo(inboxInput.trim(), category, inboxExecutionDate || null, inboxDueDate || null);
                       setInboxInput("");
                       setInboxExecutionDate(getTodayISO());
                       setInboxDueDate("");
@@ -1516,6 +1832,10 @@ export default function TodoApp() {
 
             {menu === "today" && (
               <>
+                <ViewPageHeader
+                  title="Today"
+                  description="오늘 반드시 집중해서 처리해야 할 최우선 미션입니다."
+                />
                 <div className="mb-6">
                   <CategoryTabs
                     categories={categories}
@@ -1523,6 +1843,7 @@ export default function TodoApp() {
                     onSelect={setTodayTab}
                     onAddCategory={addCategory}
                     onRemoveCategory={removeCategory}
+                    onReorderCategories={setCategories}
                     showAllOption
                   />
                 </div>
@@ -1746,13 +2067,14 @@ export default function TodoApp() {
                     </label>
                   </div>
                 </div>
-                <div className="mb-3">
+                <div className="mb-6">
                   <CategoryTabs
                     categories={categories}
                     active={nextTab}
                     onSelect={setNextTab}
                     onAddCategory={addCategory}
                     onRemoveCategory={removeCategory}
+                    onReorderCategories={setCategories}
                     showAllOption
                   />
                 </div>
@@ -1842,8 +2164,113 @@ export default function TodoApp() {
             )}
 
             {menu === "calendar" && (
-              <div className="flex-1 flex items-center justify-center py-16 text-slate-400 text-sm rounded-2xl bg-white/60 border border-dashed border-slate-200">
-                Calendar 화면은 준비 중입니다.
+              <div className="flex-1 flex flex-col min-h-0">
+                <div className="flex flex-row justify-between items-center mb-6 w-full gap-4 flex-wrap">
+                  <div className="flex items-center gap-8 flex-wrap min-w-0">
+                    <div className="shrink-0">
+                      <h2 className="text-lg font-semibold text-slate-900">Calendar</h2>
+                      <p className="mt-1 text-xs text-slate-500">
+                        전체 일정을 한눈에 조망하고 드래그하여 시공간을 재배치하세요.
+                      </p>
+                    </div>
+                    <CategoryTabs
+                      categories={categories}
+                      active={calendarTab}
+                      onSelect={setCalendarTab}
+                      onAddCategory={addCategory}
+                      onRemoveCategory={removeCategory}
+                      onReorderCategories={setCategories}
+                      showAllOption
+                    />
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setCalendarDate(
+                          (d) => new Date(d.getFullYear(), d.getMonth() - 1, 1)
+                        )
+                      }
+                      className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-200/80 transition-colors border border-slate-200/80"
+                      aria-label="이전 달"
+                    >
+                      &lt;
+                    </button>
+                    <span className="text-base font-semibold text-slate-800 min-w-[7.5rem] text-center tabular-nums">
+                      {calendarDate.getFullYear()}년 {calendarDate.getMonth() + 1}월
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setCalendarDate(
+                          (d) => new Date(d.getFullYear(), d.getMonth() + 1, 1)
+                        )
+                      }
+                      className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-200/80 transition-colors border border-slate-200/80"
+                      aria-label="다음 달"
+                    >
+                      &gt;
+                    </button>
+                  </div>
+                </div>
+                <div className="flex-1 flex flex-col min-h-0 rounded-2xl bg-white border border-slate-200/80 shadow-lg shadow-slate-200/50 overflow-hidden">
+                <DndContext
+                  sensors={sensors}
+                  onDragStart={handleDragStart}
+                  onDragEnd={handleDragEnd}
+                  modifiers={[]}
+                >
+                  <div className="grid grid-cols-7 gap-px bg-slate-200 border-b border-slate-200">
+                    {WEEKDAY_KO.map((label) => (
+                      <div
+                        key={label}
+                        className="bg-slate-50 py-2 text-center text-xs font-medium text-slate-500"
+                      >
+                        {label}
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex-1 overflow-y-auto">
+                    <div className="grid grid-cols-7 gap-px bg-slate-200">
+                      {calendarMonthDays.map((date, index) => {
+                        if (!date) {
+                          return (
+                            <div
+                              key={`empty-${index}`}
+                              className="bg-slate-50/50 min-h-[100px]"
+                              aria-hidden
+                            />
+                          );
+                        }
+                        const iso = toLocalDateString(date);
+                        const dayTodos = calendarFilteredTodos.filter(
+                          (t) => t.execution_date === iso
+                        );
+                        const visible = dayTodos.slice(0, 3);
+                        const overflow = dayTodos.length - 3;
+
+                        return (
+                          <DroppableCalendarDayCell
+                            key={iso}
+                            id={iso}
+                            date={date}
+                            dayTodos={dayTodos}
+                          >
+                            {visible.map((todo) => (
+                              <DraggableMicroTodoBar key={todo.id} todo={todo} />
+                            ))}
+                            {overflow > 0 && (
+                              <p className="text-xs text-slate-400 mt-0.5 px-0.5">
+                                +{overflow}개 더보기
+                              </p>
+                            )}
+                          </DroppableCalendarDayCell>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </DndContext>
+                </div>
               </div>
             )}
           </div>
