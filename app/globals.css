@@ -1,5 +1,7 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
   --background: #ffffff;
   --foreground: #171717;
@@ -17,6 +19,11 @@
     --background: #0a0a0a;
     --foreground: #ededed;
   }
+}
+
+.dark {
+  --background: #020617;
+  --foreground: #f8fafc;
 }
 
 body {
@@ -39,4 +46,10 @@ body {
 .next-timeline-scroll::-webkit-scrollbar-thumb {
   background: rgb(203 213 225);
   border-radius: 3px;
+}
+.dark .next-timeline-scroll {
+  scrollbar-color: rgb(71 85 105) transparent;
+}
+.dark .next-timeline-scroll::-webkit-scrollbar-thumb {
+  background: rgb(71 85 105);
 }

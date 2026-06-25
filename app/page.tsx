@@ -38,12 +38,51 @@ import {
   Heart,
   Folder,
   X,
+  Settings,
 } from "lucide-react";
 import { supabase } from "@/src/lib/supabase";
+import { useTheme } from "next-themes";
 
 const DEFAULT_CATEGORIES = ["Work", "Life"];
 const CATEGORIES_STORAGE_KEY = "todo-categories";
+const DEFAULT_SCREEN_STORAGE_KEY = "doflow_default_screen";
+const SHOW_COMPLETED_STORAGE_KEY = "doflow_show_completed";
 const WEEKDAY_KO = ["일", "월", "화", "수", "목", "금", "토"] as const;
+
+function loadShowCompleted(): boolean {
+  if (typeof window === "undefined") return true;
+  try {
+    const stored = localStorage.getItem(SHOW_COMPLETED_STORAGE_KEY);
+    if (stored === "close") return false;
+    if (stored === "open") return true;
+  } catch {}
+  return true;
+}
+
+const SURFACE_FORM =
+  "rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-lg shadow-slate-200/50 dark:shadow-slate-950/40 focus-within:ring-2 focus-within:ring-indigo-500/30 focus-within:border-indigo-300 dark:focus-within:border-indigo-600 transition-all";
+const SURFACE_CARD =
+  "bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800";
+const INPUT_SURFACE =
+  "rounded-xl bg-slate-50/80 dark:bg-slate-800 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none border-0";
+const DATE_BTN =
+  "relative flex flex-col items-center justify-center px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50/50 dark:bg-slate-800/50 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors shrink-0";
+
+function sidebarNavItemClass(isActive: boolean) {
+  return `w-auto md:w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-slate-200 dark:focus:ring-slate-700 ${
+    isActive
+      ? "bg-slate-200 dark:bg-slate-800 text-slate-800 dark:text-slate-100"
+      : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-800 dark:hover:text-slate-100"
+  }`;
+}
+
+function categoryTabInactiveClass() {
+  return "bg-gray-100 dark:bg-slate-800 text-gray-600 dark:text-slate-300 hover:bg-white/70 dark:hover:bg-slate-700 hover:text-gray-800 dark:hover:text-slate-100";
+}
+
+function categoryTabActiveClass() {
+  return "bg-white dark:bg-slate-700 text-black dark:text-white shadow-sm border border-slate-200/80 dark:border-slate-600";
+}
 
 function getCategoryIcon(name: string, className = "w-4 h-4"): React.ReactNode {
   const n = (name || "").trim().toLowerCase();
@@ -113,9 +152,17 @@ function buildCalendarMonthDays(year: number, month: number): (Date | null)[] {
 
 function getMicroBarCategoryClass(category: string | null) {
   const n = (category || "").trim().toLowerCase();
-  if (n === "work") return "bg-blue-100 text-blue-700";
-  if (n === "life") return "bg-green-100 text-green-700";
-  return "bg-slate-100 text-slate-600";
+  if (n === "work") return "bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300";
+  if (n === "life") return "bg-green-100 text-green-700 dark:bg-green-950/60 dark:text-green-300";
+  return "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300";
+}
+
+const MICRO_BAR_COMPLETED_CLASS =
+  "bg-slate-100 text-slate-400 line-through opacity-70 dark:bg-slate-800/50 dark:text-slate-500 hover:bg-slate-100 hover:text-slate-400 dark:hover:bg-slate-800/50 dark:hover:text-slate-500";
+
+/** 미완료 우선, 완료 항목은 목록 하단으로 */
+function sortTodosByCompletion(list: Todo[]): Todo[] {
+  return [...list].sort((a, b) => Number(a.is_done) - Number(b.is_done));
 }
 
 function formatMonthDay(date: Date) {
@@ -188,8 +235,8 @@ function formatHumanDate(isoDate: string) {
 function ViewPageHeader({ title, description }: { title: string; description: string }) {
   return (
     <div className="mb-6">
-      <h2 className="text-lg font-semibold text-slate-900">{title}</h2>
-      <p className="mt-1 text-xs text-slate-500">{description}</p>
+      <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">{title}</h2>
+      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{description}</p>
     </div>
   );
 }
@@ -256,7 +303,7 @@ function TodoInput({
   return (
     <form
       onSubmit={handleSubmit}
-      className="flex flex-wrap items-end gap-2 sm:gap-3 p-2 rounded-2xl bg-white border border-slate-200/80 shadow-lg shadow-slate-200/50 focus-within:ring-2 focus-within:ring-indigo-500/30 focus-within:border-indigo-300 transition-all"
+      className={`flex flex-wrap items-end gap-2 sm:gap-3 p-2 ${SURFACE_FORM}`}
     >
       <input
         type="text"
@@ -264,13 +311,9 @@ function TodoInput({
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={handleKeyDown}
         placeholder={placeholder}
-        className="flex-1 min-w-[140px] px-5 py-4 rounded-xl bg-slate-50/80 text-slate-800 placeholder:text-slate-400 focus:outline-none border-0 text-base"
+        className={`flex-1 min-w-[140px] px-5 py-4 ${INPUT_SURFACE} text-base`}
       />
-      <button
-        type="button"
-        onClick={openDatePicker}
-        className="relative flex flex-col items-center justify-center px-3 py-2 border border-slate-200 rounded-xl bg-slate-50/50 hover:bg-slate-100 transition-colors shrink-0"
-      >
+      <button type="button" onClick={openDatePicker} className={DATE_BTN}>
         <input
           type="date"
           value={executionDate}
@@ -282,15 +325,11 @@ function TodoInput({
           <Play className="w-3.5 h-3.5 text-indigo-500 shrink-0 pointer-events-none" aria-hidden />
           <span className="text-xs text-indigo-500 font-semibold pointer-events-none">Do</span>
         </span>
-        <span className="text-sm text-slate-800 font-bold pointer-events-none mt-0.5 text-center w-full">
+        <span className="text-sm text-slate-800 dark:text-slate-200 font-bold pointer-events-none mt-0.5 text-center w-full">
           {doDisplayValue}
         </span>
       </button>
-      <button
-        type="button"
-        onClick={openDatePicker}
-        className="relative flex flex-col items-center justify-center px-3 py-2 border border-slate-200 rounded-xl bg-slate-50/50 hover:bg-slate-100 transition-colors shrink-0"
-      >
+      <button type="button" onClick={openDatePicker} className={DATE_BTN}>
         <input
           type="date"
           value={dueDate}
@@ -304,7 +343,7 @@ function TodoInput({
         </span>
         <span
           className={`text-sm font-bold pointer-events-none mt-0.5 text-center w-full ${
-            dueDate ? "text-slate-800" : "text-slate-400"
+            dueDate ? "text-slate-800 dark:text-slate-200" : "text-slate-400 dark:text-slate-500"
           }`}
         >
           {dueDate ? formatHumanDate(dueDate) : "None"}
@@ -382,7 +421,7 @@ function TodoEditModal({
       role="presentation"
     >
       <div
-        className="bg-white rounded-2xl shadow-2xl p-5 w-full max-w-lg mx-4"
+        className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl p-5 w-full max-w-lg mx-4 border border-transparent dark:border-slate-800"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
@@ -390,7 +429,7 @@ function TodoEditModal({
       >
         <form
           onSubmit={handleSubmit}
-          className="flex flex-col gap-3 p-2 rounded-2xl bg-white border border-slate-200/80 shadow-lg shadow-slate-200/50 focus-within:ring-2 focus-within:ring-indigo-500/30 focus-within:border-indigo-300 transition-all"
+          className={`flex flex-col gap-3 p-2 ${SURFACE_FORM}`}
         >
           <input
             type="text"
@@ -399,15 +438,11 @@ function TodoEditModal({
             onKeyDown={handleTitleKeyDown}
             placeholder="할 일 제목..."
             autoFocus
-            className="w-full px-5 py-3.5 rounded-xl bg-slate-50/80 text-slate-800 placeholder:text-slate-400 focus:outline-none border-0 text-base"
+            className={`w-full px-5 py-3.5 ${INPUT_SURFACE} text-base`}
             aria-label="제목 수정"
           />
           <div className="flex items-end gap-3 w-full">
-            <button
-              type="button"
-              onClick={openDatePicker}
-              className="relative flex flex-col items-center justify-center px-3 py-2 border border-slate-200 rounded-xl bg-slate-50/50 hover:bg-slate-100 transition-colors shrink-0"
-            >
+            <button type="button" onClick={openDatePicker} className={DATE_BTN}>
               <input
                 type="date"
                 value={editExecutionDate}
@@ -419,15 +454,11 @@ function TodoEditModal({
                 <Play className="w-3.5 h-3.5 text-indigo-500 shrink-0 pointer-events-none" aria-hidden />
                 <span className="text-xs text-indigo-500 font-semibold pointer-events-none">Do</span>
               </span>
-              <span className="text-sm text-slate-800 font-bold pointer-events-none mt-0.5 text-center w-full">
+              <span className="text-sm text-slate-800 dark:text-slate-200 font-bold pointer-events-none mt-0.5 text-center w-full">
                 {doDisplayDate}
               </span>
             </button>
-            <button
-              type="button"
-              onClick={openDatePicker}
-              className="relative flex flex-col items-center justify-center px-3 py-2 border border-slate-200 rounded-xl bg-slate-50/50 hover:bg-slate-100 transition-colors shrink-0"
-            >
+            <button type="button" onClick={openDatePicker} className={DATE_BTN}>
               <input
                 type="date"
                 value={editDueDate}
@@ -441,7 +472,7 @@ function TodoEditModal({
               </span>
               <span
                 className={`text-sm font-bold pointer-events-none mt-0.5 text-center w-full ${
-                  editDueDate ? "text-slate-800" : "text-slate-400"
+                  editDueDate ? "text-slate-800 dark:text-slate-200" : "text-slate-400 dark:text-slate-500"
                 }`}
               >
                 {editDueDate ? formatHumanDate(editDueDate) : "None"}
@@ -558,7 +589,7 @@ function TodoRowContent({
                 ? isWork
                   ? "bg-indigo-500 border-indigo-500 text-white"
                   : "bg-emerald-500 border-emerald-500 text-white"
-                : "border-slate-300 hover:border-slate-400"
+                : "border-slate-300 dark:border-slate-600 hover:border-slate-400 dark:hover:border-slate-500"
             }`}
           >
             {todo.is_done && <Check className="w-2.5 h-2.5 stroke-[3]" />}
@@ -566,7 +597,7 @@ function TodoRowContent({
           <div className="min-w-0 flex-1">
             <span
               className={`block break-words whitespace-normal text-sm select-none ${
-                todo.is_done ? "line-through text-slate-400" : "text-slate-700"
+                todo.is_done ? "line-through text-slate-400 dark:text-slate-500" : "text-slate-700 dark:text-slate-200"
               }`}
               title={todo.title}
             >
@@ -576,10 +607,10 @@ function TodoRowContent({
         </div>
 
         {/* 우측: 마감일/카테고리/휴지통 (세로 정렬) */}
-        <div className="flex flex-col items-end justify-start gap-1.5 shrink-0 text-xs text-slate-500">
+        <div className="flex flex-col items-end justify-start gap-1.5 shrink-0 text-xs text-slate-500 dark:text-slate-400">
           <span
             className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 whitespace-nowrap ${
-              isOverdue ? "bg-red-50 text-red-700" : "bg-amber-50 text-amber-700"
+              isOverdue ? "bg-red-50 text-red-700 dark:bg-red-950/50 dark:text-red-300" : "bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300"
             }`}
             title="마감일"
           >
@@ -593,10 +624,10 @@ function TodoRowContent({
           <span
             className={`hidden sm:inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium capitalize ${
               displayCategory.toLowerCase() === "work"
-                ? "bg-blue-100 text-blue-700"
+                ? "bg-blue-100 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300"
                 : displayCategory.toLowerCase() === "life"
-                  ? "bg-green-100 text-green-700"
-                  : "bg-gray-100 text-gray-700"
+                  ? "bg-green-100 text-green-700 dark:bg-green-950/50 dark:text-green-300"
+                  : "bg-gray-100 text-gray-700 dark:bg-slate-800 dark:text-slate-300"
             }`}
             title={displayCategory}
           >
@@ -608,7 +639,7 @@ function TodoRowContent({
               e.stopPropagation();
               onRemove(todo.id);
             }}
-            className="p-1.5 rounded-xl text-slate-300 hover:text-red-500 hover:bg-red-50 transition-colors"
+            className="p-1.5 rounded-xl text-slate-300 dark:text-slate-500 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors"
             aria-label="삭제"
           >
             <Trash2 className="w-4 h-4" />
@@ -632,7 +663,7 @@ function TodoRowContent({
             ? isWork
               ? "bg-indigo-500 border-indigo-500 text-white"
               : "bg-emerald-500 border-emerald-500 text-white"
-            : "border-slate-300 hover:border-slate-400"
+            : "border-slate-300 dark:border-slate-600 hover:border-slate-400 dark:hover:border-slate-500"
         }`}
       >
         {todo.is_done && <Check className="w-3.5 h-3.5 stroke-[3]" />}
@@ -640,14 +671,14 @@ function TodoRowContent({
       <span className="flex-1 min-w-0 flex flex-col gap-1">
         <span
           className={`break-words text-sm select-none transition-colors duration-200 ${
-            todo.is_done ? "line-through text-slate-400" : "text-slate-700"
+            todo.is_done ? "line-through text-slate-400 dark:text-slate-500" : "text-slate-700 dark:text-slate-200"
           }`}
         >
           {todo.title}
         </span>
         <span className="flex items-center gap-2 flex-wrap">
-          <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 whitespace-nowrap">
-            <Play className="w-3 h-3 text-indigo-500 shrink-0" />
+          <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300 whitespace-nowrap">
+            <Play className="w-3 h-3 text-indigo-500 dark:text-indigo-400 shrink-0" />
             {todo.execution_date ? (
               <span>{formatShortDate(todo.execution_date)} 실행</span>
             ) : (
@@ -656,7 +687,7 @@ function TodoRowContent({
           </span>
           <span
             className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-md whitespace-nowrap ${
-              isOverdue ? "bg-red-50 text-red-700" : "bg-amber-50 text-amber-700"
+              isOverdue ? "bg-red-50 text-red-700 dark:bg-red-950/50 dark:text-red-300" : "bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300"
             }`}
           >
             <Flag className="w-3 h-3 shrink-0" />
@@ -671,10 +702,10 @@ function TodoRowContent({
       <span
         className={`shrink-0 text-xs rounded-md px-2 py-0.5 font-medium capitalize ${
           displayCategory.toLowerCase() === "work"
-            ? "bg-blue-100 text-blue-700"
+            ? "bg-blue-100 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300"
             : displayCategory.toLowerCase() === "life"
-              ? "bg-green-100 text-green-700"
-              : "bg-gray-100 text-gray-700"
+              ? "bg-green-100 text-green-700 dark:bg-green-950/50 dark:text-green-300"
+              : "bg-gray-100 text-gray-700 dark:bg-slate-800 dark:text-slate-300"
         }`}
         title={displayCategory}
       >
@@ -686,7 +717,7 @@ function TodoRowContent({
           e.stopPropagation();
           onRemove(todo.id);
         }}
-        className="shrink-0 p-1.5 rounded-xl text-slate-300 hover:text-red-600 hover:bg-red-50 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-red-200"
+        className="shrink-0 p-1.5 rounded-xl text-slate-300 dark:text-slate-500 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-red-200 dark:focus:ring-red-900"
         aria-label="삭제"
       >
         <Trash2 className="w-4 h-4" />
@@ -750,10 +781,10 @@ function SortableTodoRow({
       }}
       className={
         compact
-          ? `flex flex-row items-center justify-between w-full py-1.5 px-3 rounded-xl bg-white border border-slate-200/80 shadow-sm transition-all duration-200 ease-out ${
+          ? `flex flex-row items-center justify-between w-full py-1.5 px-3 ${SURFACE_CARD} rounded-xl shadow-sm transition-all duration-200 ease-out ${
               isDragging ? "opacity-30 cursor-grabbing" : "cursor-pointer"
             }`
-          : `group flex items-center gap-2.5 px-4 py-2.5 rounded-2xl bg-white border border-slate-200/80 shadow-sm hover:shadow-md transition-all duration-200 ease-out ${
+          : `group flex items-center gap-2.5 px-4 py-2.5 ${SURFACE_CARD} rounded-2xl shadow-sm hover:shadow-md dark:hover:shadow-slate-950/50 transition-all duration-200 ease-out ${
               isDragging
                 ? "scale-105 shadow-2xl z-50 ring-2 ring-blue-400 opacity-95 cursor-grabbing"
                 : "cursor-pointer"
@@ -810,7 +841,7 @@ function TodoRow({
         if (editingTodoId === todo.id) return;
         onStartEditTitle(todo.id);
       }}
-      className="group flex items-center gap-2.5 px-4 py-2.5 rounded-2xl bg-white border border-slate-200/80 shadow-sm hover:shadow-md transition-all duration-200 ease-out cursor-pointer"
+      className={`group flex items-center gap-2.5 px-4 py-2.5 ${SURFACE_CARD} rounded-2xl shadow-sm hover:shadow-md dark:hover:shadow-slate-950/50 transition-all duration-200 ease-out cursor-pointer`}
     >
       <TodoRowContent
         todo={todo}
@@ -855,20 +886,20 @@ function DroppableDayColumn({
       ref={setNodeRef}
       className={`min-w-[280px] w-72 snap-center rounded-xl border p-4 flex flex-col transition-colors ${
         isOverColumn
-          ? "bg-indigo-50/80 border-indigo-300 ring-2 ring-indigo-200"
-          : "bg-slate-50/60 border-slate-200/70"
+          ? "bg-indigo-50/80 dark:bg-indigo-950/40 border-indigo-300 dark:border-indigo-700 ring-2 ring-indigo-200 dark:ring-indigo-800"
+          : "bg-slate-50/60 dark:bg-slate-900/60 border-slate-200/70 dark:border-slate-700"
       }`}
     >
       <header className="flex items-baseline justify-between mb-2">
         <div>
           <p
             className={`text-sm font-semibold ${
-              isToday ? "text-indigo-600" : "text-slate-800"
+              isToday ? "text-indigo-600 dark:text-indigo-400" : "text-slate-800 dark:text-slate-200"
             }`}
           >
             {formatMonthDay(date)} ({weekdayLabel})
           </p>
-          <p className="mt-0.5 text-xs text-slate-500">
+          <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
             {isToday ? "오늘" : "실행 예정"}
           </p>
         </div>
@@ -902,15 +933,15 @@ function DroppableCalendarDayCell({
   return (
     <div
       ref={setNodeRef}
-      className={`bg-white min-h-[100px] p-1.5 flex flex-col transition-colors ${
-        isOverCell ? "bg-indigo-50/90 ring-1 ring-inset ring-indigo-300" : ""
+      className={`bg-white dark:bg-slate-900 min-h-[100px] p-1.5 flex flex-col transition-colors ${
+        isOverCell ? "bg-indigo-50/90 dark:bg-indigo-950/50 ring-1 ring-inset ring-indigo-300 dark:ring-indigo-700" : ""
       }`}
     >
       <span
         className={`text-xs font-medium mb-1 ${
           isToday
             ? "inline-flex h-6 w-6 items-center justify-center rounded-full bg-indigo-600 text-white"
-            : "text-slate-600"
+            : "text-slate-600 dark:text-slate-400"
         }`}
       >
         {date.getDate()}
@@ -935,9 +966,11 @@ function DraggableMicroTodoBar({ todo }: { todo: Todo }) {
       style={style}
       {...listeners}
       {...attributes}
-      className={`text-[10px] px-1.5 py-0.5 rounded-sm truncate w-full mb-0.5 cursor-grab active:cursor-grabbing touch-none ${getMicroBarCategoryClass(
-        todo.category
-      )} ${isDragging ? "opacity-40" : ""}`}
+      className={`text-[10px] px-1.5 py-0.5 rounded-sm truncate w-full mb-0.5 cursor-grab active:cursor-grabbing touch-none transition-colors ${
+        todo.is_done
+          ? MICRO_BAR_COMPLETED_CLASS
+          : getMicroBarCategoryClass(todo.category)
+      } ${isDragging ? "opacity-40" : ""}`}
       title={todo.title}
     >
       {todo.title}
@@ -976,8 +1009,8 @@ function SortableCategoryTab({
   };
 
   const getTabActiveClass = (c: string) => {
-    if (active !== c) return "bg-gray-100 text-gray-600 hover:bg-white/70 hover:text-gray-800";
-    return "bg-white text-black shadow-sm border border-slate-200/80";
+    if (active !== c) return categoryTabInactiveClass();
+    return categoryTabActiveClass();
   };
 
   const getTabIconColorClass = (c: string) => {
@@ -997,7 +1030,7 @@ function SortableCategoryTab({
       <button
         type="button"
         onClick={() => onSelect(cat)}
-        className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-slate-300 focus:ring-offset-1 cursor-grab active:cursor-grabbing ${getTabActiveClass(cat)}`}
+        className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-slate-300 dark:focus:ring-slate-600 focus:ring-offset-1 dark:focus:ring-offset-slate-900 cursor-grab active:cursor-grabbing ${getTabActiveClass(cat)}`}
       >
         <span className={getTabIconColorClass(cat)}>{getCategoryIcon(cat)}</span>
         {cat}
@@ -1010,7 +1043,7 @@ function SortableCategoryTab({
             e.stopPropagation();
             if (confirm("이 카테고리를 삭제하시겠습니까?")) onRemoveCategory(cat);
           }}
-          className="p-1 rounded text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors focus:outline-none focus:ring-2 focus:ring-red-200"
+          className="p-1 rounded text-slate-400 dark:text-slate-500 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors focus:outline-none focus:ring-2 focus:ring-red-200 dark:focus:ring-red-900"
           aria-label={`${cat} 카테고리 삭제`}
         >
           <X size={14} />
@@ -1074,7 +1107,7 @@ function CategoryTabs({
   const sortableIds = categories.map(categorySortableId);
 
   return (
-    <div className="flex flex-wrap items-center gap-1 p-1 rounded-lg bg-slate-100/80 border border-slate-200/80 w-fit max-w-full">
+    <div className="flex flex-wrap items-center gap-1 p-1 rounded-lg bg-slate-100/80 dark:bg-slate-800/80 border border-slate-200/80 dark:border-slate-700 w-fit max-w-full">
       <DndContext sensors={categorySensors} onDragEnd={handleCategoryDragEnd}>
         <SortableContext items={sortableIds} strategy={horizontalListSortingStrategy}>
           <div className="flex flex-wrap items-center gap-1">
@@ -1096,10 +1129,8 @@ function CategoryTabs({
           <button
             type="button"
             onClick={() => onSelect("all")}
-            className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-slate-300 focus:ring-offset-1 ${
-              active === "all"
-                ? "bg-white text-black shadow-sm border border-slate-200/80"
-                : "bg-gray-100 text-gray-600 hover:bg-white/70 hover:text-gray-800"
+            className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-slate-300 dark:focus:ring-slate-600 focus:ring-offset-1 dark:focus:ring-offset-slate-900 ${
+              active === "all" ? categoryTabActiveClass() : categoryTabInactiveClass()
             }`}
           >
             <ListTodo className="w-4 h-4 text-slate-500" />
@@ -1107,7 +1138,7 @@ function CategoryTabs({
           </button>
         )}
         {isAdding ? (
-          <span className="flex items-center gap-1 px-2 py-1 rounded-md bg-white border border-slate-200/80 shadow-sm">
+          <span className="flex items-center gap-1 px-2 py-1 rounded-md bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-700 shadow-sm">
             <input
               type="text"
               value={newName}
@@ -1123,7 +1154,7 @@ function CategoryTabs({
                 }
               }}
               placeholder="카테고리 이름"
-              className="w-24 min-w-0 px-2 py-1 text-sm rounded border-0 outline-none focus:ring-0 bg-transparent"
+              className="w-24 min-w-0 px-2 py-1 text-sm rounded border-0 outline-none focus:ring-0 bg-transparent text-slate-800 dark:text-slate-100"
               autoFocus
             />
           </span>
@@ -1131,7 +1162,7 @@ function CategoryTabs({
           <button
             type="button"
             onClick={() => setIsAdding(true)}
-            className="flex items-center justify-center w-8 h-8 rounded-md text-slate-500 hover:text-indigo-600 hover:bg-white/80 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-300"
+            className="flex items-center justify-center w-8 h-8 rounded-md text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-white/80 dark:hover:bg-slate-700 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-300 dark:focus:ring-slate-600"
             aria-label="카테고리 추가"
           >
             <Plus className="w-4 h-4" />
@@ -1142,15 +1173,269 @@ function CategoryTabs({
   );
 }
 
+const LANGUAGE_OPTIONS = [
+  { value: "ko", label: "🇰🇷 한국어 (Korean)", enabled: true },
+  { value: "en", label: "🇺🇸 English", enabled: false },
+  { value: "zh", label: "🇨🇳 中文 (Chinese)", enabled: false },
+  { value: "es", label: "🇪🇸 Español (Spanish)", enabled: false },
+  { value: "ja", label: "🇯🇵 日本語 (Japanese)", enabled: false },
+  { value: "hi", label: "🇮🇳 हिन्दी (Hindi)", enabled: false },
+] as const;
+
+function SettingsModal({
+  onClose,
+  onLogout,
+  showCompleted,
+  onShowCompletedChange,
+}: {
+  onClose: () => void;
+  onLogout: () => void;
+  showCompleted: boolean;
+  onShowCompletedChange: (mode: "open" | "close") => void;
+}) {
+  const { theme, setTheme } = useTheme();
+  const [language, setLanguage] = useState<string>("ko");
+  const [mounted, setMounted] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!toastMessage) return;
+    const timer = setTimeout(() => setToastMessage(null), 2800);
+    return () => clearTimeout(timer);
+  }, [toastMessage]);
+
+  const handleLanguageChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const value = e.target.value;
+    if (value === "ko") {
+      setLanguage("ko");
+      return;
+    }
+    setToastMessage("글로벌 업데이트 준비 중입니다! 🌍");
+  };
+
+  const [defaultScreen, setDefaultScreen] = useState("today");
+
+  useEffect(() => {
+    const stored = localStorage.getItem(DEFAULT_SCREEN_STORAGE_KEY);
+    if (stored) setDefaultScreen(stored);
+  }, []);
+
+  const handleDefaultScreenChange = (value: string) => {
+    setDefaultScreen(value);
+    localStorage.setItem(DEFAULT_SCREEN_STORAGE_KEY, value);
+  };
+
+  const themeOptions = [
+    { id: "light", label: "라이트" },
+    { id: "dark", label: "다크" },
+    { id: "system", label: "시스템" },
+  ] as const;
+
+  const startupScreenOptions = [
+    { id: "inbox", label: "Inbox" },
+    { id: "today", label: "Today" },
+    { id: "next", label: "Next" },
+    { id: "calendar", label: "Calendar" },
+  ] as const;
+
+  const completedTasksOptions = [
+    { id: "open", label: "보이기 (Open)" },
+    { id: "close", label: "숨기기 (Close)" },
+  ] as const;
+
+  return (
+    <div
+      className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-200"
+      onClick={onClose}
+      role="presentation"
+    >
+      <div
+        className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl p-6 w-full max-w-md relative border border-transparent dark:border-slate-800"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label="설정"
+      >
+        <button
+          type="button"
+          onClick={onClose}
+          className="absolute top-4 right-4 p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 dark:hover:text-slate-200 transition-colors"
+          aria-label="닫기"
+        >
+          <X className="w-5 h-5" />
+        </button>
+        <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100 pb-4 border-b border-slate-200 dark:border-slate-700 pr-8">
+          설정
+        </h2>
+
+        <div className="flex flex-col gap-6 py-6">
+          <section>
+            <h3 className="text-sm font-semibold text-slate-500 dark:text-slate-400 mb-2">
+              화면 테마
+            </h3>
+            {mounted ? (
+              <div className="flex p-1 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700">
+                {themeOptions.map(({ id, label }) => (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => setTheme(id)}
+                    className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500/40 ${
+                      theme === id
+                        ? "bg-slate-800 text-white shadow-sm dark:bg-slate-100 dark:text-slate-900"
+                        : "text-slate-600 hover:bg-white/60 dark:text-slate-300 dark:hover:bg-slate-700/60"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="h-10 rounded-xl bg-slate-100 dark:bg-slate-800 animate-pulse" />
+            )}
+          </section>
+
+          <section>
+            <h3 className="text-sm font-semibold text-slate-500 dark:text-slate-400 mb-2">
+              언어 설정
+            </h3>
+            <select
+              value={language}
+              onChange={handleLanguageChange}
+              className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-4 py-2.5 text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/40"
+              aria-label="언어 선택"
+            >
+              {LANGUAGE_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                  {!opt.enabled ? " — 준비 중" : ""}
+                </option>
+              ))}
+            </select>
+            <p className="mt-2 text-xs text-slate-400 dark:text-slate-500">
+              현재 한국어만 지원됩니다. 다른 언어는 곧 업데이트될 예정이에요.
+            </p>
+          </section>
+
+          <section>
+            <h3 className="text-sm font-semibold text-slate-500 dark:text-slate-400 mb-2">
+              최초 화면 (Startup Screen)
+            </h3>
+            <div className="flex p-1 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700">
+              {startupScreenOptions.map(({ id, label }) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => handleDefaultScreenChange(id)}
+                  className={`flex-1 px-2 py-2 rounded-lg text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500/40 ${
+                    defaultScreen === id
+                      ? "bg-slate-800 text-white shadow-sm dark:bg-slate-100 dark:text-slate-900"
+                      : "text-slate-600 hover:bg-white/60 dark:text-slate-300 dark:hover:bg-slate-700/60"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <p className="mt-2 text-xs text-slate-400 dark:text-slate-500">
+              앱 실행 시 처음 표시할 화면을 선택합니다.
+            </p>
+          </section>
+
+          <section>
+            <h3 className="text-sm font-semibold text-slate-500 dark:text-slate-400 mb-2">
+              완료된 할 일 (Completed Tasks)
+            </h3>
+            <div className="flex p-1 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700">
+              {completedTasksOptions.map(({ id, label }) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => onShowCompletedChange(id)}
+                  className={`flex-1 px-2 py-2 rounded-lg text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500/40 ${
+                    (id === "open" && showCompleted) || (id === "close" && !showCompleted)
+                      ? "bg-slate-800 text-white shadow-sm dark:bg-slate-100 dark:text-slate-900"
+                      : "text-slate-600 hover:bg-white/60 dark:text-slate-300 dark:hover:bg-slate-700/60"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <p className="mt-2 text-xs text-slate-400 dark:text-slate-500">
+              완료된 항목을 리스트에 표시할지 선택합니다.
+            </p>
+          </section>
+        </div>
+
+        {toastMessage && (
+          <div
+            role="status"
+            className="mb-4 px-4 py-2.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 border border-indigo-200 dark:border-indigo-800 text-sm font-medium text-indigo-700 dark:text-indigo-300 text-center animate-in fade-in duration-200"
+          >
+            {toastMessage}
+          </div>
+        )}
+
+        <div className="pt-4 border-t border-slate-200 dark:border-slate-700">
+          <button
+            type="button"
+            onClick={onLogout}
+            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors focus:outline-none focus:ring-2 focus:ring-red-200 dark:focus:ring-red-900"
+          >
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+              className="shrink-0"
+              aria-hidden
+            >
+              <path
+                d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+            로그아웃
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function TodoApp() {
   const router = useRouter();
-  const [menu, setMenu] = useState<SidebarMenu>("inbox");
+  const [menu, setMenu] = useState<SidebarMenu>("today");
   const [todos, setTodos] = useState<Todo[]>([]);
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [activeTodo, setActiveTodo] = useState<Todo | null>(null);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [showCompleted, setShowCompleted] = useState(true);
+
+  useEffect(() => {
+    setShowCompleted(loadShowCompleted());
+  }, []);
+
+  const handleShowCompletedChange = (mode: "open" | "close") => {
+    const next = mode === "open";
+    setShowCompleted(next);
+    localStorage.setItem(SHOW_COMPLETED_STORAGE_KEY, mode);
+  };
+
+  const filterVisibleTodos = (list: Todo[]) =>
+    showCompleted ? list : list.filter((t) => !t.is_done);
 
   // 정렬: 실행일 | 마감일 | 추가한 날짜 | 이름
   const [sortBy, setSortBy] = useState<SortBy>("execution_date");
@@ -1229,6 +1514,16 @@ export default function TodoApp() {
       setAuthChecked(true);
     });
   }, [router]);
+
+  useEffect(() => {
+    const stored = localStorage.getItem(DEFAULT_SCREEN_STORAGE_KEY);
+    if (stored === "inbox" || stored === "next" || stored === "calendar") {
+      setMenu(stored);
+    } else {
+      setMenu("today");
+      setTodayTab("all");
+    }
+  }, []);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -1423,8 +1718,8 @@ export default function TodoApp() {
   }, [displaySortedTodos]);
 
   const calendarFilteredTodos = useMemo(
-    () => filterByCategory(displaySortedTodos, calendarTab),
-    [displaySortedTodos, calendarTab]
+    () => filterVisibleTodos(filterByCategory(displaySortedTodos, calendarTab)),
+    [displaySortedTodos, calendarTab, showCompleted]
   );
 
   const handleMoveOverdueToToday = async () => {
@@ -1579,16 +1874,16 @@ export default function TodoApp() {
 
   if (!authChecked) {
     return (
-      <div className="flex h-screen items-center justify-center bg-slate-50/90 text-slate-500 text-sm">
+      <div className="flex h-screen items-center justify-center bg-slate-50/90 dark:bg-slate-950 text-slate-500 dark:text-slate-400 text-sm">
         확인 중...
       </div>
     );
   }
 
   return (
-    <div className="flex h-screen flex-col md:flex-row text-slate-800 font-sans antialiased">
+    <div className="flex h-screen flex-col md:flex-row text-slate-800 dark:text-slate-200 font-sans antialiased transition-colors duration-200">
       {/* 좌측 사이드바 */}
-      <aside className="w-full md:w-64 flex-shrink-0 flex flex-col justify-between p-6 bg-slate-50 border-r border-slate-200">
+      <aside className="w-full md:w-64 flex-shrink-0 flex flex-col justify-between p-6 bg-slate-50 dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 transition-colors duration-200">
         <div>
           <h1 className="mb-8">
             <div className="flex items-center gap-1.5 px-2">
@@ -1603,7 +1898,7 @@ export default function TodoApp() {
                   <path d="M2.5 12C2.5 7.5 6 4 10 4C13 4 15 6 17 9C18.5 11.5 20 12 21.5 12C22.3 12 23 11.3 23 10.5C23 12.5 21.5 16 18.5 16C15.5 16 13.5 14 11.5 11C10 8.5 8.5 8 7.5 8C6 8 5.5 10 5.5 12C5.5 15 8 17 10 17C10.5 17 11 17.5 11 18C11 18.5 10.5 19 10 19C7 19 2.5 16 2.5 12Z" />
                 </svg>
               </div>
-              <span className="text-2xl font-extrabold tracking-tighter text-slate-900">
+              <span className="text-2xl font-extrabold tracking-tighter text-slate-900 dark:text-slate-100">
                 <span className="text-indigo-600">Do</span>Flow<span className="text-indigo-400">.</span>
               </span>
             </div>
@@ -1612,9 +1907,7 @@ export default function TodoApp() {
             <button
               type="button"
               onClick={() => setMenu("inbox")}
-              className={`w-auto md:w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-slate-200 ${
-                menu === "inbox" ? "bg-slate-200 text-slate-800" : "text-slate-600 hover:bg-slate-100 hover:text-slate-800"
-              }`}
+              className={sidebarNavItemClass(menu === "inbox")}
             >
               <Inbox className="w-5 h-5" />
               Inbox
@@ -1622,11 +1915,7 @@ export default function TodoApp() {
             <button
               type="button"
               onClick={() => { setMenu("today"); setTodayTab("all"); }}
-              className={`w-auto md:w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-slate-200 ${
-                menu === "today"
-                  ? "bg-slate-200 text-slate-800"
-                  : "text-slate-600 hover:bg-slate-100 hover:text-slate-800"
-              }`}
+              className={sidebarNavItemClass(menu === "today")}
             >
               <Sun className="w-5 h-5" />
               Today
@@ -1634,9 +1923,7 @@ export default function TodoApp() {
             <button
               type="button"
               onClick={() => setMenu("next")}
-              className={`w-auto md:w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-slate-200 ${
-                menu === "next" ? "bg-slate-200 text-slate-800" : "text-slate-600 hover:bg-slate-100 hover:text-slate-800"
-              }`}
+              className={sidebarNavItemClass(menu === "next")}
             >
               <ListTodo className="w-5 h-5" />
               Next
@@ -1644,9 +1931,7 @@ export default function TodoApp() {
             <button
               type="button"
               onClick={() => setMenu("calendar")}
-              className={`w-auto md:w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-slate-200 ${
-                menu === "calendar" ? "bg-slate-200 text-slate-800" : "text-slate-600 hover:bg-slate-100 hover:text-slate-800"
-              }`}
+              className={sidebarNavItemClass(menu === "calendar")}
             >
               <Calendar className="w-5 h-5" />
               Calendar
@@ -1655,45 +1940,38 @@ export default function TodoApp() {
         </div>
         <button
           type="button"
-          onClick={handleLogout}
-          className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-slate-500 hover:text-red-600 hover:bg-red-50 transition-colors focus:outline-none focus:ring-2 focus:ring-red-200 mt-6 md:mt-0"
+          onClick={() => setIsSettingsOpen(true)}
+          className={`${sidebarNavItemClass(false)} mt-6 md:mt-0`}
         >
-          <svg
-            width="18"
-            height="18"
-            viewBox="0 0 24 24"
-            fill="none"
-            xmlns="http://www.w3.org/2000/svg"
-            className="shrink-0"
-            aria-hidden
-          >
-            <path
-              d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-          로그아웃
+          <Settings className="w-5 h-5" />
+          설정
         </button>
       </aside>
 
+      {isSettingsOpen && (
+        <SettingsModal
+          onClose={() => setIsSettingsOpen(false)}
+          onLogout={handleLogout}
+          showCompleted={showCompleted}
+          onShowCompletedChange={handleShowCompletedChange}
+        />
+      )}
+
       {/* 우측 메인 콘텐츠 */}
-      <main className="flex-1 flex flex-col min-w-0 overflow-auto bg-white p-8 md:p-12">
+      <main className="flex-1 flex flex-col min-w-0 overflow-auto bg-white dark:bg-slate-950 p-8 md:p-12 transition-colors duration-200">
         {loading && (
-          <div className="flex-1 flex items-center justify-center text-slate-500 text-sm">
+          <div className="flex-1 flex items-center justify-center text-slate-500 dark:text-slate-400 text-sm">
             로딩 중...
           </div>
         )}
         {!loading && (
           <div className="flex-1 flex flex-col min-w-0">
             {fetchError && (
-              <div className="mb-6 p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-800 text-sm">
+              <div className="mb-6 p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-200 text-sm">
                 <p className="font-medium">할 일 목록을 불러올 수 없습니다</p>
-                <p className="mt-1 text-amber-700">{fetchError}</p>
-                <p className="mt-2 text-amber-600 text-xs">
-                  Supabase에 <code className="bg-amber-100 px-1 rounded">todos</code> 테이블이 있는지, RLS 정책을 확인해 주세요.
+                <p className="mt-1 text-amber-700 dark:text-amber-300">{fetchError}</p>
+                <p className="mt-2 text-amber-600 dark:text-amber-400 text-xs">
+                  Supabase에 <code className="bg-amber-100 dark:bg-amber-900/60 px-1 rounded">todos</code> 테이블이 있는지, RLS 정책을 확인해 주세요.
                 </p>
               </div>
             )}
@@ -1715,12 +1993,12 @@ export default function TodoApp() {
                   />
                 </div>
                 <div className="mb-2 flex justify-end">
-                  <label className="flex items-center gap-2 text-sm text-slate-500">
+                  <label className="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
                     <span>정렬</span>
                     <select
                       value={sortBy}
                       onChange={(e) => setSortBy(e.target.value as SortBy)}
-                      className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                      className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-1.5 text-slate-700 dark:text-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
                     >
                       <option value="execution_date">실행일</option>
                       <option value="due_date">마감일</option>
@@ -1754,15 +2032,19 @@ export default function TodoApp() {
                   modifiers={[restrictToVerticalAxis]}
                 >
                   <SortableContext
-                    items={filterByCategory(displaySortedTodos, activeInboxTab).map((t) => t.id)}
+                    items={filterVisibleTodos(
+                      filterByCategory(displaySortedTodos, activeInboxTab)
+                    ).map((t) => t.id)}
                     strategy={verticalListSortingStrategy}
                   >
                     <ul className="flex-1 overflow-y-auto space-y-3 min-h-[200px]">
                       {(() => {
-                        const filtered = filterByCategory(displaySortedTodos, activeInboxTab);
+                        const filtered = filterVisibleTodos(
+                          filterByCategory(displaySortedTodos, activeInboxTab)
+                        );
                         if (filtered.length === 0) {
                           return (
-                            <li className="py-16 text-center text-slate-400 text-sm rounded-2xl bg-white/60 border border-dashed border-slate-200">
+                            <li className="py-16 text-center text-slate-400 dark:text-slate-500 text-sm rounded-2xl bg-white/60 dark:bg-slate-900/40 border border-dashed border-slate-200 dark:border-slate-700">
                               할 일을 입력하고 추가해 보세요
                             </li>
                           );
@@ -1794,18 +2076,19 @@ export default function TodoApp() {
                                 onCancelEditTitle={handleCancelEditTitle}
                               />
                             ))}
-                            {completedList.length > 0 && (
+                            {showCompleted && completedList.length > 0 && (
                               <li>
                                 <div className="flex items-center my-2 text-xs">
-                                  <div className="flex-grow border-t border-gray-200" />
-                                  <span className="px-2 text-gray-400 text-xs font-medium">
+                                  <div className="flex-grow border-t border-gray-200 dark:border-slate-700" />
+                                  <span className="px-2 text-gray-400 dark:text-slate-500 text-xs font-medium">
                                     완료된 할일
                                   </span>
-                                  <div className="flex-grow border-t border-gray-200" />
+                                  <div className="flex-grow border-t border-gray-200 dark:border-slate-700" />
                                 </div>
                               </li>
                             )}
-                            {completedList.map((todo) => (
+                            {showCompleted &&
+                              completedList.map((todo) => (
                               <SortableTodoRow
                                 key={todo.id}
                                 todo={todo}
@@ -1848,12 +2131,12 @@ export default function TodoApp() {
                   />
                 </div>
                 <div className="mb-2 flex justify-end">
-                  <label className="flex items-center gap-2 text-sm text-slate-500">
+                  <label className="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
                     <span>정렬</span>
                     <select
                       value={sortBy}
                       onChange={(e) => setSortBy(e.target.value as SortBy)}
-                      className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                      className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-1.5 text-slate-700 dark:text-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
                     >
                       <option value="execution_date">실행일</option>
                       <option value="due_date">마감일</option>
@@ -1869,16 +2152,20 @@ export default function TodoApp() {
                   modifiers={[restrictToVerticalAxis]}
                 >
                   <SortableContext
-                    items={filterByCategory(todayFilteredTodos, todayTab).map((t) => t.id)}
+                    items={filterVisibleTodos(
+                      filterByCategory(todayFilteredTodos, todayTab)
+                    ).map((t) => t.id)}
                     strategy={verticalListSortingStrategy}
                   >
                     <ul className="flex-1 overflow-y-auto space-y-3 min-h-0 mb-6">
                       {(() => {
                         const overdue = filterByCategory(todayOverdueTodos, todayTab);
-                        const todayList = filterByCategory(todayFilteredTodos, todayTab);
+                        const todayList = filterVisibleTodos(
+                          filterByCategory(todayFilteredTodos, todayTab)
+                        );
                         if (overdue.length === 0 && todayList.length === 0) {
                           return (
-                            <li className="py-16 text-center text-slate-400 text-sm rounded-2xl bg-white/60 border border-dashed border-slate-200">
+                            <li className="py-16 text-center text-slate-400 dark:text-slate-500 text-sm rounded-2xl bg-white/60 dark:bg-slate-900/40 border border-dashed border-slate-200 dark:border-slate-700">
                               오늘 실행할 일이 없습니다
                             </li>
                           );
@@ -1888,20 +2175,20 @@ export default function TodoApp() {
                             {overdue.length > 0 && (
                               <li>
                                 <div className="flex items-center my-3 text-xs md:text-base">
-                                  <div className="flex-grow border-t border-gray-200" />
+                                  <div className="flex-grow border-t border-gray-200 dark:border-slate-700" />
                                   <div className="flex items-center gap-2 px-3">
-                                    <span className="font-medium text-gray-400 opacity-70 tracking-tight">
+                                    <span className="font-medium text-gray-400 dark:text-slate-500 opacity-70 tracking-tight">
                                       기한이 지난
                                     </span>
                                     <button
                                       type="button"
                                       onClick={handleMoveOverdueToToday}
-                                      className="px-3 py-1 rounded-full border border-gray-300 bg-gray-50 text-[11px] text-gray-500 hover:bg-gray-100 transition-colors"
+                                      className="px-3 py-1 rounded-full border border-gray-300 dark:border-slate-600 bg-gray-50 dark:bg-slate-800 text-[11px] text-gray-500 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors"
                                     >
                                       🔄 모두 오늘로
                                     </button>
                                   </div>
-                                  <div className="flex-grow border-t border-gray-200" />
+                                  <div className="flex-grow border-t border-gray-200 dark:border-slate-700" />
                                 </div>
                               </li>
                             )}
@@ -1924,11 +2211,11 @@ export default function TodoApp() {
                             {overdue.length > 0 && (
                               <li>
                                 <div className="flex items-center my-4 md:my-6 text-xs md:text-base">
-                                  <div className="flex-grow border-t border-gray-200" />
+                                  <div className="flex-grow border-t border-gray-200 dark:border-slate-700" />
                                   <span className="px-3 font-medium text-red-500 opacity-70 tracking-tight">
                                     오늘
                                   </span>
-                                  <div className="flex-grow border-t border-gray-200" />
+                                  <div className="flex-grow border-t border-gray-200 dark:border-slate-700" />
                                 </div>
                               </li>
                             )}
@@ -1960,18 +2247,19 @@ export default function TodoApp() {
                                       onCancelEditTitle={handleCancelEditTitle}
                                     />
                                   ))}
-                                  {completedList.length > 0 && (
+                                  {showCompleted && completedList.length > 0 && (
                                     <li>
                                       <div className="flex items-center my-2 text-xs">
-                                        <div className="flex-grow border-t border-gray-200" />
-                                        <span className="px-2 text-gray-400 text-xs font-medium">
+                                        <div className="flex-grow border-t border-gray-200 dark:border-slate-700" />
+                                        <span className="px-2 text-gray-400 dark:text-slate-500 text-xs font-medium">
                                           완료된 할일
                                         </span>
-                                        <div className="flex-grow border-t border-gray-200" />
+                                        <div className="flex-grow border-t border-gray-200 dark:border-slate-700" />
                                       </div>
                                     </li>
                                   )}
-                                  {completedList.map((todo) => (
+                                  {showCompleted &&
+                              completedList.map((todo) => (
                                     <TodoRow
                                       key={todo.id}
                                       todo={todo}
@@ -1996,7 +2284,7 @@ export default function TodoApp() {
                     </ul>
                   </SortableContext>
                 </DndContext>
-                <div className="rounded-2xl bg-white border border-slate-200/80 shadow-lg shadow-slate-200/50 p-2">
+                <div className={`${SURFACE_FORM} p-2`}>
                   <TodoInput
                     value={todayInput}
                     onChange={setTodayInput}
@@ -2021,24 +2309,24 @@ export default function TodoApp() {
               <div className="flex-1 flex flex-col min-w-0">
                 <div className="mb-4 flex items-baseline justify-between gap-4 flex-wrap">
                   <div>
-                    <h2 className="text-lg font-semibold text-slate-900">
+                    <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
                       다가오는 {viewDays}일
                     </h2>
-                    <p className="mt-1 text-xs text-slate-500">
+                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
                       오늘부터 실행 예정 할 일을 한눈에 확인하세요.
                     </p>
                   </div>
                   <div className="flex items-center gap-4 flex-wrap">
-                    <div className="flex items-center gap-1 p-1 rounded-xl bg-slate-100/80 border border-slate-200/80">
+                    <div className="flex items-center gap-1 p-1 rounded-xl bg-slate-100/80 dark:bg-slate-800/80 border border-slate-200/80 dark:border-slate-700">
                       {([3, 5, 7] as const).map((n) => (
                         <button
                           key={n}
                           type="button"
                           onClick={() => setViewDays(n)}
-                          className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:ring-offset-1 ${
+                          className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-300 dark:focus:ring-indigo-700 focus:ring-offset-1 dark:focus:ring-offset-slate-900 ${
                             viewDays === n
-                              ? "bg-white text-indigo-700 shadow-sm border border-slate-200/80"
-                              : "text-slate-600 hover:bg-white/60 hover:text-slate-800"
+                              ? "bg-white dark:bg-slate-700 text-indigo-700 dark:text-indigo-300 shadow-sm border border-slate-200/80 dark:border-slate-600"
+                              : "text-slate-600 dark:text-slate-400 hover:bg-white/60 dark:hover:bg-slate-700 hover:text-slate-800 dark:hover:text-slate-200"
                           }`}
                         >
                           {n}일
@@ -2046,16 +2334,16 @@ export default function TodoApp() {
                       ))}
                     </div>
                     <label className="flex items-center gap-2 cursor-pointer select-none">
-                      <span className="text-sm text-slate-600">주말/공휴일 제외</span>
+                      <span className="text-sm text-slate-600 dark:text-slate-400">주말/공휴일 제외</span>
                       <button
                         type="button"
                         role="switch"
                         aria-checked={excludeHolidays}
                         onClick={() => setExcludeHolidays((v) => !v)}
-                        className={`relative inline-flex h-6 w-10 shrink-0 rounded-full border transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:ring-offset-2 ${
+                        className={`relative inline-flex h-6 w-10 shrink-0 rounded-full border transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-300 dark:focus:ring-indigo-700 focus:ring-offset-2 dark:focus:ring-offset-slate-900 ${
                           excludeHolidays
                             ? "bg-indigo-600 border-indigo-600"
-                            : "bg-slate-200 border-slate-300"
+                            : "bg-slate-200 dark:bg-slate-700 border-slate-300 dark:border-slate-600"
                         }`}
                       >
                         <span
@@ -2086,9 +2374,11 @@ export default function TodoApp() {
                 >
                   <div className="flex flex-row gap-4 pb-4 overflow-x-auto snap-x snap-mandatory next-timeline-scroll">
                     {nextViewDays.map(({ date, iso }) => {
-                      const baseForNext = filterByCategory(displaySortedTodos, nextTab);
-                      const dayTodos = baseForNext.filter(
-                        (t) => t.execution_date === iso
+                      const baseForNext = filterVisibleTodos(
+                        filterByCategory(displaySortedTodos, nextTab)
+                      );
+                      const dayTodos = sortTodosByCompletion(
+                        baseForNext.filter((t) => t.execution_date === iso)
                       );
                       const isToday = iso === getTodayISO();
                       const weekdayLabel = WEEKDAY_KO[date.getDay()];
@@ -2108,7 +2398,7 @@ export default function TodoApp() {
                             <ul className="mt-3 space-y-2 flex-1 min-h-[80px]">
                               {dayTodos.length === 0 ? (
                                 <li className="h-full flex items-center justify-center py-6">
-                                  <p className="text-sm text-slate-400 text-center">
+                                  <p className="text-sm text-slate-400 dark:text-slate-500 text-center">
                                     예정된 할 일이 없습니다
                                   </p>
                                 </li>
@@ -2140,7 +2430,7 @@ export default function TodoApp() {
                   {menu === "next" && (
                     <DragOverlay zIndex={9999}>
                       {activeId && activeTodo && (
-                        <div className="flex flex-row items-center justify-between w-[260px] py-1.5 px-3 rounded-xl bg-white border border-slate-200/80 shadow-2xl scale-105 cursor-grabbing opacity-100">
+                        <div className={`flex flex-row items-center justify-between w-[260px] py-1.5 px-3 rounded-xl ${SURFACE_CARD} shadow-2xl scale-105 cursor-grabbing opacity-100`}>
                           <TodoRowContent
                             todo={activeTodo}
                             onToggle={toggleTodo}
@@ -2168,8 +2458,8 @@ export default function TodoApp() {
                 <div className="flex flex-row justify-between items-center mb-6 w-full gap-4 flex-wrap">
                   <div className="flex items-center gap-8 flex-wrap min-w-0">
                     <div className="shrink-0">
-                      <h2 className="text-lg font-semibold text-slate-900">Calendar</h2>
-                      <p className="mt-1 text-xs text-slate-500">
+                      <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Calendar</h2>
+                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
                         전체 일정을 한눈에 조망하고 드래그하여 시공간을 재배치하세요.
                       </p>
                     </div>
@@ -2191,12 +2481,12 @@ export default function TodoApp() {
                           (d) => new Date(d.getFullYear(), d.getMonth() - 1, 1)
                         )
                       }
-                      className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-200/80 transition-colors border border-slate-200/80"
+                      className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-200/80 dark:hover:bg-slate-700 transition-colors border border-slate-200/80 dark:border-slate-700"
                       aria-label="이전 달"
                     >
                       &lt;
                     </button>
-                    <span className="text-base font-semibold text-slate-800 min-w-[7.5rem] text-center tabular-nums">
+                    <span className="text-base font-semibold text-slate-800 dark:text-slate-200 min-w-[7.5rem] text-center tabular-nums">
                       {calendarDate.getFullYear()}년 {calendarDate.getMonth() + 1}월
                     </span>
                     <button
@@ -2206,45 +2496,45 @@ export default function TodoApp() {
                           (d) => new Date(d.getFullYear(), d.getMonth() + 1, 1)
                         )
                       }
-                      className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-200/80 transition-colors border border-slate-200/80"
+                      className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-200/80 dark:hover:bg-slate-700 transition-colors border border-slate-200/80 dark:border-slate-700"
                       aria-label="다음 달"
                     >
                       &gt;
                     </button>
                   </div>
                 </div>
-                <div className="flex-1 flex flex-col min-h-0 rounded-2xl bg-white border border-slate-200/80 shadow-lg shadow-slate-200/50 overflow-hidden">
+                <div className="flex-1 flex flex-col min-h-0 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-lg shadow-slate-200/50 dark:shadow-slate-950/40 overflow-hidden transition-colors duration-200">
                 <DndContext
                   sensors={sensors}
                   onDragStart={handleDragStart}
                   onDragEnd={handleDragEnd}
                   modifiers={[]}
                 >
-                  <div className="grid grid-cols-7 gap-px bg-slate-200 border-b border-slate-200">
+                  <div className="grid grid-cols-7 gap-px bg-slate-200 dark:bg-slate-700 border-b border-slate-200 dark:border-slate-700">
                     {WEEKDAY_KO.map((label) => (
                       <div
                         key={label}
-                        className="bg-slate-50 py-2 text-center text-xs font-medium text-slate-500"
+                        className="bg-slate-50 dark:bg-slate-800 py-2 text-center text-xs font-medium text-slate-500 dark:text-slate-400"
                       >
                         {label}
                       </div>
                     ))}
                   </div>
                   <div className="flex-1 overflow-y-auto">
-                    <div className="grid grid-cols-7 gap-px bg-slate-200">
+                    <div className="grid grid-cols-7 gap-px bg-slate-200 dark:bg-slate-700">
                       {calendarMonthDays.map((date, index) => {
                         if (!date) {
                           return (
                             <div
                               key={`empty-${index}`}
-                              className="bg-slate-50/50 min-h-[100px]"
+                              className="bg-slate-50/50 dark:bg-slate-900/50 min-h-[100px]"
                               aria-hidden
                             />
                           );
                         }
                         const iso = toLocalDateString(date);
-                        const dayTodos = calendarFilteredTodos.filter(
-                          (t) => t.execution_date === iso
+                        const dayTodos = sortTodosByCompletion(
+                          calendarFilteredTodos.filter((t) => t.execution_date === iso)
                         );
                         const visible = dayTodos.slice(0, 3);
                         const overflow = dayTodos.length - 3;
@@ -2260,7 +2550,7 @@ export default function TodoApp() {
                               <DraggableMicroTodoBar key={todo.id} todo={todo} />
                             ))}
                             {overflow > 0 && (
-                              <p className="text-xs text-slate-400 mt-0.5 px-0.5">
+                              <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5 px-0.5">
                                 +{overflow}개 더보기
                               </p>
                             )}

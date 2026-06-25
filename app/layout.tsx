@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { Providers } from "./providers";
 
 export const metadata: Metadata = {
   title: "DoFlow - 일과 삶의 리듬",
@@ -12,9 +13,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="ko">
-      <body className="antialiased">
-        {children}
+    <html lang="ko" suppressHydrationWarning>
+      <body className="antialiased bg-white text-slate-900 dark:bg-slate-950 dark:text-slate-50 transition-colors duration-200">
+        <Providers>{children}</Providers>
       </body>
     </html>
   );
