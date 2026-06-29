@@ -1,7 +1,6 @@
-import { createClient, SupabaseClient } from "@supabase/supabase-js";
-
-const supabaseUrl = "https://zsmpubvgrthebqvrqaxm.supabase.co";
-const supabaseAnonKey = "sb_publishable_rpBS7qLrA1U8X0rx-UvmJg_dIJUrLhZ";
+import { createBrowserClient } from "@supabase/auth-helpers-nextjs";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { supabaseAnonKey, supabaseUrl } from "./supabase/config";
 
 function createSupabaseClient(): SupabaseClient {
   if (!supabaseUrl || !supabaseAnonKey) {
@@ -9,7 +8,7 @@ function createSupabaseClient(): SupabaseClient {
       "Supabase env missing. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in .env.local"
     );
   }
-  return createClient(supabaseUrl, supabaseAnonKey);
+  return createBrowserClient(supabaseUrl, supabaseAnonKey);
 }
 
 export const supabase = createSupabaseClient();
