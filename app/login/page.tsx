@@ -44,11 +44,12 @@ export default function LoginPage() {
     setError(null);
     setLoadingProvider(provider);
 
-    const redirectTo = `${window.location.origin}/auth/callback?next=/`;
-
     const { error: authError } = await supabase.auth.signInWithOAuth({
       provider,
-      options: { redirectTo },
+      options: {
+        // Local / Vercel 등 현재 접속 도메인을 동적으로 감지해 OAuth 후 복귀
+        redirectTo: `${window.location.origin}/auth/callback?next=/`,
+      },
     });
 
     if (authError) {
