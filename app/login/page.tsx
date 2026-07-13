@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { supabase } from "@/src/lib/supabase";
 
 type OAuthProvider = "kakao" | "apple" | "google";
@@ -37,8 +38,51 @@ function GoogleIcon({ className }: { className?: string }) {
 }
 
 export default function LoginPage() {
+  const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [loadingProvider, setLoadingProvider] = useState<OAuthProvider | null>(null);
+  const [checkingSession, setCheckingSession] = useState(true);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("error") === "auth") {
+      setError("로그인에 실패했습니다. 다시 시도해 주세요.");
+    }
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+
+    const redirectIfAuthed = async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!active) return;
+
+      if (session) {
+        router.replace("/");
+        return;
+      }
+
+      setCheckingSession(false);
+    };
+
+    redirectIfAuthed();
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "SIGNED_IN" && session) {
+        router.replace("/");
+      }
+    });
+
+    return () => {
+      active = false;
+      subscription.unsubscribe();
+    };
+  }, [router]);
 
   const handleOAuthLogin = async (provider: OAuthProvider) => {
     setError(null);
@@ -66,10 +110,10 @@ export default function LoginPage() {
           <span className="text-indigo-400">.</span>
         </h1>
         <p className="text-slate-500 dark:text-slate-400 text-center text-sm mb-10">
-          일과 삶의 리듬을 시작하세요
+          {checkingSession ? "로그인 상태 확인 중..." : "일과 삶의 리듬을 시작하세요"}
         </p>
 
-        <div className="flex flex-col gap-3">
+        <div className={`flex flex-col gap-3 ${checkingSession ? "opacity-60 pointer-events-none" : ""}`}>
           <button
             type="button"
             disabled={loadingProvider !== null}

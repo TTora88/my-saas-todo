@@ -4,37 +4,38 @@ import { NextResponse } from "next/server";
 import { supabaseAnonKey, supabaseUrl } from "@/src/lib/supabase/config";
 
 export async function GET(request: Request) {
-  const { searchParams, origin } = new URL(request.url);
-  const code = searchParams.get("code");
-  let next = searchParams.get("next") ?? "/";
+  const requestUrl = new URL(request.url);
+  const code = requestUrl.searchParams.get("code");
+  let next = requestUrl.searchParams.get("next") ?? "/";
   if (!next.startsWith("/")) {
     next = "/";
   }
 
   if (code) {
     const cookieStore = await cookies();
+    const redirectUrl = new URL(next, requestUrl.origin);
+    let response = NextResponse.redirect(redirectUrl);
+
     const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
       cookies: {
         getAll() {
           return cookieStore.getAll();
         },
         setAll(cookiesToSet) {
-          try {
-            cookiesToSet.forEach(({ name, value, options }) =>
-              cookieStore.set(name, value, options)
-            );
-          } catch {
-            // Server Component에서 호출된 경우 무시
-          }
+          cookiesToSet.forEach(({ name, value, options }) => {
+            response.cookies.set(name, value, options);
+          });
         },
       },
     });
 
     const { error } = await supabase.auth.exchangeCodeForSession(code);
     if (!error) {
-      return NextResponse.redirect(`${origin}${next}`);
+      return response;
     }
+
+    console.error("auth callback exchange error:", error.message);
   }
 
-  return NextResponse.redirect(`${origin}/login?error=auth`);
+  return NextResponse.redirect(new URL("/login?error=auth", requestUrl.origin));
 }

@@ -42,22 +42,21 @@ import {
 } from "lucide-react";
 import { supabase } from "@/src/lib/supabase";
 import { useTheme } from "next-themes";
+import {
+  applyInitialScreen,
+  clearSettingsLocalStorage,
+  DEFAULT_USER_SETTINGS,
+  loadOrCreateUserSettings,
+  syncSettingsToLocalStorage,
+  upsertUserSettings,
+  type AppTheme,
+  type InitialScreen,
+  type ShowCompletedMode,
+} from "@/src/lib/user-settings";
 
 const DEFAULT_CATEGORIES = ["Work", "Life"];
 const CATEGORIES_STORAGE_KEY = "todo-categories";
-const DEFAULT_SCREEN_STORAGE_KEY = "doflow_default_screen";
-const SHOW_COMPLETED_STORAGE_KEY = "doflow_show_completed";
 const WEEKDAY_KO = ["일", "월", "화", "수", "목", "금", "토"] as const;
-
-function loadShowCompleted(): boolean {
-  if (typeof window === "undefined") return true;
-  try {
-    const stored = localStorage.getItem(SHOW_COMPLETED_STORAGE_KEY);
-    if (stored === "close") return false;
-    if (stored === "open") return true;
-  } catch {}
-  return true;
-}
 
 const SURFACE_FORM =
   "rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-lg shadow-slate-200/50 dark:shadow-slate-950/40 focus-within:ring-2 focus-within:ring-indigo-500/30 focus-within:border-indigo-300 dark:focus-within:border-indigo-600 transition-all";
@@ -1187,13 +1186,19 @@ function SettingsModal({
   onLogout,
   showCompleted,
   onShowCompletedChange,
+  defaultScreen,
+  onDefaultScreenChange,
+  onThemeChange,
 }: {
   onClose: () => void;
   onLogout: () => void;
   showCompleted: boolean;
-  onShowCompletedChange: (mode: "open" | "close") => void;
+  onShowCompletedChange: (mode: ShowCompletedMode) => void;
+  defaultScreen: InitialScreen;
+  onDefaultScreenChange: (screen: InitialScreen) => void;
+  onThemeChange: (theme: AppTheme) => void;
 }) {
-  const { theme, setTheme } = useTheme();
+  const { theme } = useTheme();
   const [language, setLanguage] = useState<string>("ko");
   const [mounted, setMounted] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -1215,18 +1220,6 @@ function SettingsModal({
       return;
     }
     setToastMessage("글로벌 업데이트 준비 중입니다! 🌍");
-  };
-
-  const [defaultScreen, setDefaultScreen] = useState("today");
-
-  useEffect(() => {
-    const stored = localStorage.getItem(DEFAULT_SCREEN_STORAGE_KEY);
-    if (stored) setDefaultScreen(stored);
-  }, []);
-
-  const handleDefaultScreenChange = (value: string) => {
-    setDefaultScreen(value);
-    localStorage.setItem(DEFAULT_SCREEN_STORAGE_KEY, value);
   };
 
   const themeOptions = [
@@ -1283,7 +1276,7 @@ function SettingsModal({
                   <button
                     key={id}
                     type="button"
-                    onClick={() => setTheme(id)}
+                    onClick={() => onThemeChange(id as AppTheme)}
                     className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500/40 ${
                       theme === id
                         ? "bg-slate-800 text-white shadow-sm dark:bg-slate-100 dark:text-slate-900"
@@ -1330,7 +1323,7 @@ function SettingsModal({
                 <button
                   key={id}
                   type="button"
-                  onClick={() => handleDefaultScreenChange(id)}
+                  onClick={() => onDefaultScreenChange(id as InitialScreen)}
                   className={`flex-1 px-2 py-2 rounded-lg text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500/40 ${
                     defaultScreen === id
                       ? "bg-slate-800 text-white shadow-sm dark:bg-slate-100 dark:text-slate-900"
@@ -1414,25 +1407,19 @@ function SettingsModal({
 
 export default function TodoApp() {
   const router = useRouter();
+  const { setTheme } = useTheme();
   const [menu, setMenu] = useState<SidebarMenu>("today");
   const [todos, setTodos] = useState<Todo[]>([]);
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [settingsHydrated, setSettingsHydrated] = useState(false);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [activeTodo, setActiveTodo] = useState<Todo | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [showCompleted, setShowCompleted] = useState(true);
-
-  useEffect(() => {
-    setShowCompleted(loadShowCompleted());
-  }, []);
-
-  const handleShowCompletedChange = (mode: "open" | "close") => {
-    const next = mode === "open";
-    setShowCompleted(next);
-    localStorage.setItem(SHOW_COMPLETED_STORAGE_KEY, mode);
-  };
+  const [defaultScreen, setDefaultScreen] = useState<InitialScreen>("today");
 
   const filterVisibleTodos = (list: Todo[]) =>
     showCompleted ? list : list.filter((t) => !t.is_done);
@@ -1483,6 +1470,47 @@ export default function TodoApp() {
 
   const [calendarDate, setCalendarDate] = useState(() => new Date());
 
+  const persistUserSettings = async (patch: {
+    theme?: AppTheme;
+    initial_screen?: InitialScreen;
+    show_completed?: ShowCompletedMode;
+  }) => {
+    if (!userId) return;
+    await upsertUserSettings(userId, patch);
+  };
+
+  const handleThemeChange = async (theme: AppTheme) => {
+    setTheme(theme);
+    syncSettingsToLocalStorage({
+      theme,
+      initial_screen: defaultScreen,
+      show_completed: showCompleted ? "open" : "close",
+    });
+    await persistUserSettings({ theme });
+  };
+
+  const handleDefaultScreenChange = async (screen: InitialScreen) => {
+    setDefaultScreen(screen);
+    applyInitialScreen(screen, setMenu, setTodayTab);
+    syncSettingsToLocalStorage({
+      theme: DEFAULT_USER_SETTINGS.theme,
+      initial_screen: screen,
+      show_completed: showCompleted ? "open" : "close",
+    });
+    await persistUserSettings({ initial_screen: screen });
+  };
+
+  const handleShowCompletedChange = async (mode: ShowCompletedMode) => {
+    const next = mode === "open";
+    setShowCompleted(next);
+    syncSettingsToLocalStorage({
+      theme: DEFAULT_USER_SETTINGS.theme,
+      initial_screen: defaultScreen,
+      show_completed: mode,
+    });
+    await persistUserSettings({ show_completed: mode });
+  };
+
   // 카테고리 목록 변경 시 선택 탭 유효성
   useEffect(() => {
     if (
@@ -1511,21 +1539,45 @@ export default function TodoApp() {
         router.replace("/login");
         return;
       }
+      setUserId(session.user.id);
       setAuthChecked(true);
     });
   }, [router]);
 
   useEffect(() => {
-    const stored = localStorage.getItem(DEFAULT_SCREEN_STORAGE_KEY);
-    if (stored === "inbox" || stored === "next" || stored === "calendar") {
-      setMenu(stored);
-    } else {
-      setMenu("today");
-      setTodayTab("all");
+    if (!authChecked || !userId || settingsHydrated) return;
+
+    const uid = userId;
+    let cancelled = false;
+
+    async function hydrateSettings() {
+      const settings = await loadOrCreateUserSettings(uid);
+      if (cancelled) return;
+
+      setTheme(settings.theme);
+      setDefaultScreen(settings.initial_screen);
+      setShowCompleted(settings.show_completed === "open");
+      applyInitialScreen(settings.initial_screen, setMenu, setTodayTab);
+      syncSettingsToLocalStorage(settings);
+      setSettingsHydrated(true);
     }
-  }, []);
+
+    hydrateSettings();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authChecked, userId, settingsHydrated, setTheme]);
 
   const handleLogout = async () => {
+    setTheme("system");
+    clearSettingsLocalStorage();
+    setShowCompleted(true);
+    setDefaultScreen("today");
+    setMenu("today");
+    setTodayTab("all");
+    setSettingsHydrated(false);
+    setUserId(null);
     await supabase.auth.signOut();
     router.replace("/login");
     router.refresh();
@@ -1548,9 +1600,9 @@ export default function TodoApp() {
   };
 
   useEffect(() => {
-    if (!authChecked) return;
+    if (!authChecked || !settingsHydrated) return;
     fetchTodos().finally(() => setLoading(false));
-  }, [authChecked]);
+  }, [authChecked, settingsHydrated]);
 
   const addTodo = async (
     text: string,
@@ -1954,6 +2006,9 @@ export default function TodoApp() {
           onLogout={handleLogout}
           showCompleted={showCompleted}
           onShowCompletedChange={handleShowCompletedChange}
+          defaultScreen={defaultScreen}
+          onDefaultScreenChange={handleDefaultScreenChange}
+          onThemeChange={handleThemeChange}
         />
       )}
 
